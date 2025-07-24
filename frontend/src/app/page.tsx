@@ -1,0 +1,21 @@
+import DocumentUpload from '@/components/DocumentUpload'
+
+export default function Home() {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-6 py-8 max-w-[90rem]">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            TayLaw - Legal AI Assistant
+          </h1>
+          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            AI-powered legal document analysis with full transparency into agent decision-making. 
+            Upload contracts for comprehensive red flags review and risk assessment.
+          </p>
+        </div>
+        
+        <DocumentUpload />
+      </div>
+    </main>
+  )
+}

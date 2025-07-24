@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+langchain
+langchain-openai
+langgraph
+anthropic
+python-dotenv
+PyPDF2
+python-docx
+websockets
