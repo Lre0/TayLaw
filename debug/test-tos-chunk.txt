@@ -1,0 +1,15 @@
+LIMITS ON LIABILITY
+
+Except as stated in Section L.3.b, the liability of each party, and its affiliates and licensors, for any damages arising out of or related to these Terms (i) excludes damages that are consequential, incidental, special, indirect, or exemplary damages, including lost profits, business, contracts, revenue, goodwill, production, anticipated savings, or data, and costs of procurement of substitute goods or services and (ii) is limited to Fees paid by Customer for the Services in the previous 12 months.
+
+DISCLAIMER OF WARRANTIES
+
+THE SERVICES AND OUTPUTS ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND; AND ANTHROPIC MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATING TO THIRD-PARTY PRODUCTS OR SERVICES. ANTHROPIC EXPRESSLY DISCLAIMS ALL IMPLIED WARRANTIES, INCLUDING WARRANTIES OF MERCHANTABILITY, NON-INFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE.
+
+TERMINATION
+
+Each party may terminate these Terms at any time for convenience with Notice, except Anthropic must provide 30 days prior Notice. Anthropic may terminate these Terms immediately with Notice if Anthropic reasonably believes or determines that Anthropic's provision of the Services to Customer is prohibited by applicable law.
+
+ARBITRATION
+
+Any Dispute will be determined in English by final, binding arbitration. EACH PARTY AGREES THEY ARE WAIVING THE RIGHT TO A TRIAL BY JURY, AND THE RIGHT TO JOIN AND PARTICIPATE IN A CLASS ACTION.

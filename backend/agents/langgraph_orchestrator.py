@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Dict, Any, TypedDict, List
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -46,8 +47,14 @@ class LangGraphOrchestrator:
     
     def __init__(self):
         self.document_processor = DocumentProcessor()
-        # Use real analyzer now that API authentication is configured
-        self.risk_analyzer = RiskAnalyzer()
+        # Check for API key, fallback to mock if not available
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            self.risk_analyzer = RiskAnalyzer()
+            print("Using real RiskAnalyzer with API key")
+        else:
+            self.risk_analyzer = MockRiskAnalyzer()
+            print("No API key found, using MockRiskAnalyzer")
         self.memory = MemorySaver()
         self.graph = self._build_workflow_graph()
     
@@ -196,40 +203,25 @@ class LangGraphOrchestrator:
         return state
 
     def _create_intelligent_chunks(self, text: str, filename: str) -> List[ChunkData]:
-        """Create intelligent chunks preserving legal structure with enhanced section detection"""
+        """Optimized chunking for sub-10 second performance"""
         chunks = []
+        text_length = len(text)
         
-        # Enhanced section patterns for better document structure recognition
-        section_patterns = [
-            r'(?i)\n\s*\d+\.\s+[A-Z][^\n]+\n',  # Numbered sections
-            r'(?i)\n\s*[A-Z]+\.\s+[A-Z][^\n]+\n',  # Lettered sections  
-            r'(?i)\n\s*ARTICLE\s+[IVX]+[^\n]*\n',  # Articles
-            r'(?i)\n\s*SECTION\s+\d+[^\n]*\n',  # Sections
-            r'(?i)\n\s*CLAUSE\s+\d+[^\n]*\n',  # Clauses
-            r'(?i)\n\s*\d+\.\d+\s+[A-Z][^\n]+\n',  # Sub-numbered sections
-            r'(?i)\n\s*\([a-z]\)\s+[A-Z][^\n]+\n',  # Lettered subsections
-            r'(?i)\n\s*EXHIBIT\s+[A-Z]+[^\n]*\n',  # Exhibits
-            r'(?i)\n\s*SCHEDULE\s+[A-Z0-9]+[^\n]*\n',  # Schedules
-        ]
+        # Fast chunking parameters - optimized for speed
+        chunk_size = 6000  # Larger chunks = fewer chunks = faster processing
+        overlap_size = 200
         
-        # Extract section headers for better context
-        self.document_sections = self._extract_section_headers(text)
+        # Pre-extract sections once for all chunks
+        self.document_sections = self._extract_section_headers_fast(text)
         
-        # Aggressive chunking for speed - larger chunks, less parallel overhead
-        chunk_size = 4000  # Larger chunks for fewer API calls
-        overlap_size = 150  # Reduced overlap for speed
-        
-        words = text.split()
-        total_words = len(words)
-        
-        if total_words <= 1000:  # Small document - single chunk for speed
-            section_context = self._find_section_for_chunk(text, 0)
+        # Fast path for small documents
+        if text_length <= 8000:
             chunks.append({
                 "chunk_id": str(uuid.uuid4()),
                 "chunk_index": 0,
                 "content": text,
                 "page_range": "1-end",
-                "section_context": section_context,
+                "section_context": "Full Document",
                 "char_position": 0,
                 "context_overlap": "",
                 "status": "ready",
@@ -239,106 +231,102 @@ class LangGraphOrchestrator:
                 "confidence_score": 0.0,
                 "processing_time": 0.0
             })
-        else:
-            # Create chunks with overlap and better section tracking
-            words_per_chunk = chunk_size // 5  # Approximate words per chunk
-            overlap_words = overlap_size // 5
+            return chunks
+        
+        # Fast character-based chunking (no word splitting)
+        start_pos = 0
+        chunk_index = 0
+        
+        while start_pos < text_length:
+            end_pos = min(start_pos + chunk_size, text_length)
             
-            start_idx = 0
-            chunk_index = 0
-            current_char_pos = 0
+            # Adjust to word boundaries for clean breaks
+            if end_pos < text_length:
+                # Find next space or sentence end
+                for i in range(end_pos, min(end_pos + 200, text_length)):
+                    if text[i] in '.\n' or (text[i] == ' ' and i > end_pos + 100):
+                        end_pos = i + 1
+                        break
             
-            while start_idx < total_words:
-                end_idx = min(start_idx + words_per_chunk, total_words)
-                chunk_words = words[start_idx:end_idx]
-                
-                # Add overlap from previous chunk
-                if start_idx > 0:
-                    overlap_start = max(0, start_idx - overlap_words)
-                    overlap_words_list = words[overlap_start:start_idx]
-                    overlap_text = " ".join(overlap_words_list)
-                else:
-                    overlap_text = ""
-                
-                chunk_content = " ".join(chunk_words)
-                
-                # Calculate character position for section mapping
-                chunk_char_start = len(" ".join(words[:start_idx]))
-                
-                # Find relevant section for this chunk
-                section_context = self._find_section_for_chunk(chunk_content, chunk_char_start)
-                
-                # Estimate page range (rough approximation)
-                pages_per_chunk = max(1, (end_idx - start_idx) // 250)
-                start_page = max(1, (start_idx // 250) + 1)
-                end_page = start_page + pages_per_chunk - 1
-                
-                chunks.append({
-                    "chunk_id": str(uuid.uuid4()),
-                    "chunk_index": chunk_index,
-                    "content": chunk_content,
-                    "page_range": f"{start_page}-{end_page}",
-                    "section_context": section_context,
-                    "char_position": chunk_char_start,
-                    "context_overlap": overlap_text,
-                    "status": "ready",
-                    "risk_analysis": "",
-                    "rag_context": "",
-                    "findings": [],
-                    "confidence_score": 0.0,
-                    "processing_time": 0.0
-                })
-                
-                start_idx = end_idx - overlap_words  # Overlap for next chunk
-                chunk_index += 1
-                
-                if end_idx >= total_words:
-                    break
+            chunk_content = text[start_pos:end_pos]
+            
+            # Simple overlap
+            overlap_text = ""
+            if start_pos > 0:
+                overlap_start = max(0, start_pos - overlap_size)
+                overlap_text = text[overlap_start:start_pos]
+            
+            # Fast section context (simplified)
+            section_context = self._find_section_fast(start_pos)
+            
+            # Simple page estimation
+            start_page = max(1, start_pos // 2500 + 1)
+            end_page = max(start_page, end_pos // 2500 + 1)
+            
+            chunks.append({
+                "chunk_id": str(uuid.uuid4()),
+                "chunk_index": chunk_index,
+                "content": chunk_content,
+                "page_range": f"{start_page}-{end_page}",
+                "section_context": section_context,
+                "char_position": start_pos,
+                "context_overlap": overlap_text,
+                "status": "ready",
+                "risk_analysis": "",
+                "rag_context": "",
+                "findings": [],
+                "confidence_score": 0.0,
+                "processing_time": 0.0
+            })
+            
+            start_pos = end_pos - overlap_size
+            chunk_index += 1
+            
+            if end_pos >= text_length:
+                break
         
         return chunks
     
-    def _extract_section_headers(self, text: str) -> List[Dict[str, Any]]:
-        """Extract section headers with their positions for better context"""
+    def _extract_section_headers_fast(self, text: str) -> List[Dict[str, Any]]:
+        """Fast section header extraction with minimal regex"""
         headers = []
         
-        # Common legal section patterns with capture groups
-        header_patterns = [
-            (r'(?i)\n\s*(\d+\.\s+[A-Z][^\n]+)', 'numbered_section'),
-            (r'(?i)\n\s*([A-Z]+\.\s+[A-Z][^\n]+)', 'lettered_section'),
-            (r'(?i)\n\s*(ARTICLE\s+[IVX]+[^\n]*)', 'article'),
-            (r'(?i)\n\s*(SECTION\s+\d+[^\n]*)', 'section'),
-            (r'(?i)\n\s*(CLAUSE\s+\d+[^\n]*)', 'clause'),
-            (r'(?i)\n\s*(\d+\.\d+\s+[A-Z][^\n]+)', 'sub_numbered'),
-            (r'(?i)\n\s*(\([a-z]\)\s+[A-Z][^\n]+)', 'lettered_subsection'),
-            (r'(?i)\n\s*(EXHIBIT\s+[A-Z]+[^\n]*)', 'exhibit'),
-            (r'(?i)\n\s*(SCHEDULE\s+[A-Z0-9]+[^\n]*)', 'schedule'),
-            # Additional common contract sections
-            (r'(?i)\n\s*(RECITALS?[^\n]*)', 'recitals'),
-            (r'(?i)\n\s*(DEFINITIONS?[^\n]*)', 'definitions'),
-            (r'(?i)\n\s*(TERMS?\s+AND\s+CONDITIONS?[^\n]*)', 'terms_conditions'),
-            (r'(?i)\n\s*(LIABILITY[^\n]*)', 'liability_section'),
-            (r'(?i)\n\s*(INDEMNIFICATION[^\n]*)', 'indemnification_section'),
-            (r'(?i)\n\s*(TERMINATION[^\n]*)', 'termination_section'),
-            (r'(?i)\n\s*(GOVERNING\s+LAW[^\n]*)', 'governing_law'),
-            (r'(?i)\n\s*(DISPUTE\s+RESOLUTION[^\n]*)', 'dispute_resolution'),
+        # Simplified patterns for speed - only most common ones
+        key_patterns = [
+            (r'(?i)\n\s*(\d+\.\s+[A-Z][^\n]{1,50})', 'numbered_section'),
+            (r'(?i)\n\s*(ARTICLE\s+[IVX]+[^\n]{1,30})', 'article'),
+            (r'(?i)\n\s*(SECTION\s+\d+[^\n]{1,30})', 'section'),
+            (r'(?i)\n\s*(DEFINITIONS?[^\n]{0,20})', 'definitions'),
+            (r'(?i)\n\s*(LIABILITY[^\n]{0,20})', 'liability_section'),
+            (r'(?i)\n\s*(TERMINATION[^\n]{0,20})', 'termination_section')
         ]
         
-        for pattern, section_type in header_patterns:
-            matches = re.finditer(pattern, text)
-            for match in matches:
-                header_text = match.group(1).strip()
-                start_pos = match.start()
-                
+        # Single pass through text
+        for pattern, section_type in key_patterns:
+            for match in re.finditer(pattern, text):
                 headers.append({
-                    'text': header_text,
+                    'text': match.group(1).strip(),
                     'type': section_type,
-                    'position': start_pos,
-                    'normalized': self._normalize_section_header(header_text)
+                    'position': match.start()
                 })
         
-        # Sort by position
         headers.sort(key=lambda x: x['position'])
         return headers
+    
+    def _find_section_fast(self, char_position: int) -> str:
+        """Fast section lookup using binary search concept"""
+        if not self.document_sections:
+            return "Document Section"
+        
+        # Find the last section before this position
+        current_section = "Document Section"
+        for section in self.document_sections:
+            if section['position'] <= char_position:
+                current_section = section['text'][:30]  # Truncate for display
+            else:
+                break
+        
+        return current_section
     
     def _normalize_section_header(self, header: str) -> str:
         """Normalize section header for consistent display"""

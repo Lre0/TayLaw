@@ -1,0 +1,65 @@
+COMMERCIAL TERMS OF SERVICE AGREEMENT
+
+ARTICLE 1: ACCEPTANCE OF TERMS
+By accessing or using our services, you agree to be bound by these Terms of Service ("Terms"). If you disagree with any part of these terms, then you may not access the service.
+
+ARTICLE 2: DESCRIPTION OF SERVICE
+We provide artificial intelligence and machine learning services through our API and web interface. The service is provided on an "as is" basis without warranties of any kind.
+
+ARTICLE 3: USER ACCOUNTS AND REGISTRATION
+3.1 Account Creation: You must register for an account to use certain features of the service.
+3.2 Account Security: You are responsible for safeguarding the password and for all activities that occur under your account.
+3.3 Account Termination: We may terminate or suspend your account immediately, without prior notice or liability, for any reason whatsoever.
+
+ARTICLE 4: PAYMENT TERMS
+4.1 Fees: You agree to pay all fees as described on our pricing page.
+4.2 Payment Method: Payment is due immediately upon receipt of invoice.
+4.3 Late Payment: Late payments may result in suspension of service.
+4.4 Refunds: All fees are non-refundable except as required by law.
+
+ARTICLE 5: INTELLECTUAL PROPERTY RIGHTS
+5.1 Service IP: The service and its original content, features, and functionality are and will remain the exclusive property of the Company.
+5.2 User Content: You retain ownership of any intellectual property rights that you hold in content that you submit to the service.
+5.3 License Grant: By submitting content, you grant us a worldwide, non-exclusive, royalty-free license to use, reproduce, modify, and distribute your content.
+
+ARTICLE 6: PROHIBITED USES
+You may not use our service:
+- For any unlawful purpose or to solicit others to perform unlawful acts
+- To violate any international, federal, provincial, or state regulations, rules, laws, or local ordinances
+- To infringe upon or violate our intellectual property rights or the intellectual property rights of others
+- To harass, abuse, insult, harm, defame, slander, disparage, intimidate, or discriminate
+- To submit false or misleading information
+
+ARTICLE 7: CONTENT AND CONDUCT
+7.1 User Responsibility: You are solely responsible for your conduct and any data, text, files, information, usernames, images, graphics, photos, profiles, audio and video clips, sounds, musical works, works of authorship, applications, links and other content or materials that you submit, post, or display on or via the service.
+7.2 Content Moderation: We reserve the right to remove any content that violates these terms or that we find objectionable.
+
+ARTICLE 8: PRIVACY POLICY
+Your privacy is important to us. Please review our Privacy Policy, which also governs your use of the service.
+
+ARTICLE 9: DISCLAIMERS
+9.1 Service Availability: We do not guarantee that the service will be available at all times.
+9.2 No Warranties: THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS. WE EXPRESSLY DISCLAIM ALL WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED.
+9.3 Limitation of Liability: IN NO EVENT SHALL THE COMPANY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES.
+
+ARTICLE 10: INDEMNIFICATION
+You agree to defend, indemnify, and hold harmless the Company and its licensee and licensors, and their employees, contractors, agents, officers and directors, from and against any and all claims, damages, obligations, losses, liabilities, costs or debt, and expenses (including but not limited to attorney's fees).
+
+ARTICLE 11: TERMINATION
+11.1 Termination by Us: We may terminate or suspend your access immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.
+11.2 Effect of Termination: Upon termination, your right to use the service will cease immediately.
+
+ARTICLE 12: GOVERNING LAW
+These Terms shall be interpreted and governed by the laws of the State of California, without regard to conflict of law provisions.
+
+ARTICLE 13: CHANGES TO TERMS
+We reserve the right, at our sole discretion, to modify or replace these Terms at any time. If a revision is material, we will try to provide at least 30 days notice prior to any new terms taking effect.
+
+ARTICLE 14: CONTACT INFORMATION
+Questions about the Terms of Service should be sent to us at legal@company.com.
+
+ARTICLE 15: SEVERABILITY
+If any provision of these Terms is held to be unenforceable or invalid, such provision will be changed and interpreted to accomplish the objectives of such provision to the greatest extent possible under applicable law and the remaining provisions will continue in full force and effect.
+
+ARTICLE 16: WAIVER
+No waiver of any term of these Terms shall be deemed a further or continuing waiver of such term or any other term, and a party's failure to assert any right or provision under these Terms shall not constitute a waiver of such right or provision.

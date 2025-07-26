@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 interface DocumentViewerProps {
   file: File | null
@@ -13,13 +13,7 @@ export default function DocumentViewer({ file, isOpen, onClose }: DocumentViewer
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
 
-  useEffect(() => {
-    if (isOpen && file) {
-      loadDocumentContent()
-    }
-  }, [isOpen, file])
-
-  const loadDocumentContent = async () => {
+  const loadDocumentContent = useCallback(async () => {
     if (!file) return
 
     setLoading(true)
@@ -58,7 +52,13 @@ export default function DocumentViewer({ file, isOpen, onClose }: DocumentViewer
     } finally {
       setLoading(false)
     }
-  }
+  }, [file])
+
+  useEffect(() => {
+    if (isOpen && file) {
+      loadDocumentContent()
+    }
+  }, [isOpen, file, loadDocumentContent])
 
   if (!isOpen) return null
 

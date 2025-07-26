@@ -8,5 +8,7 @@ langgraph
 anthropic
 python-dotenv
 PyPDF2
+pdfplumber
+PyMuPDF
 python-docx
 websockets

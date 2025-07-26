@@ -20,7 +20,7 @@ interface AgentActivity {
   message: string
   level: 'info' | 'warning' | 'error' | 'success'
   progress?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   chunk_id?: string
 }
 
@@ -38,7 +38,7 @@ interface AgentMonitorProps {
 export default function AgentMonitor({ isActive }: AgentMonitorProps) {
   const [activities, setActivities] = useState<AgentActivity[]>([])
   const [agentStates, setAgentStates] = useState<Record<string, string>>({})
-  const [chunkStatuses, setChunkStatuses] = useState<Record<string, ChunkStatus>>({})
+  const [, setChunkStatuses] = useState<Record<string, ChunkStatus>>({})
   const [parallelStatus, setParallelStatus] = useState<ParallelProcessingStatus>({ 
     active: false, 
     total_chunks: 0, 
@@ -46,8 +46,8 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     completion_percentage: 0 
   })
   const [connected, setConnected] = useState(false)
-  const [usePolling, setUsePolling] = useState(false)
-  const websocketRef = useRef<WebSocket | null>(null)
+  // Removed unused variables
+  // Removed unused ref
   const activitiesEndRef = useRef<HTMLDivElement>(null)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const activitiesContainerRef = useRef<HTMLDivElement>(null)
@@ -60,13 +60,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     }
   }
 
-  const checkScrollPosition = () => {
-    if (activitiesContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = activitiesContainerRef.current
-      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10
-      setIsUserScrolledUp(!isAtBottom)
-    }
-  }
 
   useEffect(() => {
     // Only auto-scroll if there are new activities and user hasn't scrolled up
@@ -74,7 +67,7 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
       scrollToBottom()
       setLastActivityCount(activities.length)
     }
-  }, [activities, lastActivityCount, isUserScrolledUp])
+  }, [activities, lastActivityCount, isUserScrolledUp, scrollToBottom])
 
   useEffect(() => {
     if (!isActive) return
@@ -90,11 +83,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     }
   }, [isActive])
 
-  const connectWebSocket = () => {
-    // WebSocket implementation can be added later if needed
-    // For now, use HTTP polling which is more reliable
-    startPolling()
-  }
 
   const startPolling = () => {
     if (pollingIntervalRef.current) {
@@ -132,34 +120,8 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     pollingIntervalRef.current = setInterval(pollAgentStatus, 250)
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'processing': return 'text-blue-600 bg-blue-50'
-      case 'completed': return 'text-green-600 bg-green-50'
-      case 'error': return 'text-red-600 bg-red-50'
-      case 'waiting': return 'text-yellow-600 bg-yellow-50'
-      default: return 'text-gray-600 bg-gray-50'
-    }
-  }
 
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'success': return 'text-green-700 border-green-200 bg-green-50'
-      case 'warning': return 'text-yellow-700 border-yellow-200 bg-yellow-50'
-      case 'error': return 'text-red-700 border-red-200 bg-red-50'
-      default: return 'text-blue-700 border-blue-200 bg-blue-50'
-    }
-  }
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'processing': return '🔄'
-      case 'completed': return '✅'
-      case 'error': return '❌'
-      case 'waiting': return '⏸️'
-      default: return '⚪'
-    }
-  }
 
   const getMainAgents = () => {
     // Simplified workflow progress based on actual state
@@ -200,6 +162,9 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
   }
 
   const getStepProgress = (step: string): number => {
+    // Don't show any progress until we actually have agent states
+    if (Object.keys(agentStates).length === 0) return 0
+    
     const hasDocumentParser = agentStates['Document Parser'] === 'completed'
     const hasChunking = agentStates['Document Chunking Agent'] === 'completed'
     const parallelComplete = parallelStatus.completed_chunks >= parallelStatus.total_chunks && parallelStatus.total_chunks > 0
@@ -210,28 +175,28 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     // Determine progress based on actual workflow state
     switch (step) {
       case 'parsing':
-        return hasDocumentParser ? 100 : (Object.keys(agentStates).length > 0 ? 50 : 0)
+        return hasDocumentParser ? 100 : (agentStates['Document Parser'] === 'processing' ? 50 : 0)
       
       case 'chunking':
         if (!hasDocumentParser) return 0
-        return hasChunking ? 100 : (agentStates['Document Chunking Agent'] === 'processing' ? 50 : 10)
+        return hasChunking ? 100 : (agentStates['Document Chunking Agent'] === 'processing' ? 50 : 0)
       
       case 'analysis':
         if (!hasChunking) return 0
-        if (parallelStatus.total_chunks === 0) return 10
-        return parallelComplete ? 100 : Math.max(10, parallelStatus.completion_percentage)
+        if (parallelStatus.total_chunks === 0) return 0
+        return parallelComplete ? 100 : parallelStatus.completion_percentage
       
       case 'cross_ref':
         if (!parallelComplete) return 0
-        return hasCrossRef ? 100 : (agentStates['Cross-Reference Agent'] === 'processing' ? 50 : 10)
+        return hasCrossRef ? 100 : (agentStates['Cross-Reference Agent'] === 'processing' ? 50 : 0)
       
       case 'combination':
         if (!hasCrossRef) return 0
-        return hasCombination ? 100 : (agentStates['Results Combination Agent'] === 'processing' ? 50 : 10)
+        return hasCombination ? 100 : (agentStates['Results Combination Agent'] === 'processing' ? 50 : 0)
       
       case 'report':
         if (!hasCombination) return 0
-        return hasReport ? 100 : (agentStates['Report Generator'] === 'processing' ? 50 : 10)
+        return hasReport ? 100 : (agentStates['Report Generator'] === 'processing' ? 50 : 0)
       
       default:
         return 0
