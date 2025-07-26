@@ -13,7 +13,9 @@ class RiskAnalyzer:
     async def analyze_risks(self, document_text: str, user_prompt: str) -> str:
         """Analyze document for legal risks and red flags with timeout and retry logic"""
         
-        system_prompt = """You are an experienced legal advisor conducting a rapid contract risk assessment. Your goal is to quickly identify the most important legal risks and red flags.
+        system_prompt = """You are an experienced legal advisor conducting a contract risk assessment. Analyze the document text and provide structured findings.
+
+        CRITICAL REQUIREMENT: You must quote the exact text from the document that supports each finding. Do not make assumptions about what might be missing.
 
         FOCUS AREAS - Analyze these key risk categories:
         1. LIABILITY: Caps, exclusions, unlimited liability exposures
@@ -23,25 +25,29 @@ class RiskAnalyzer:
         5. COMPLIANCE: Data protection, regulatory requirements
         6. PERFORMANCE: SLAs, delivery timelines, dispute resolution
 
-        OUTPUT FORMAT:
-        For each risk identified, provide:
-        - Risk category (HIGH/MEDIUM/LOW)
-        - Brief description of the issue
-        - Business impact explanation
-        - Quote relevant text if critical
+        REQUIRED OUTPUT FORMAT:
+        For each finding, use this exact structure:
 
-        Be concise but thorough - aim for 3-5 key findings per section analyzed."""
+        FINDING [number]:
+        SEVERITY: [HIGH/MEDIUM/LOW]
+        CATEGORY: [One of the 6 categories above]
+        DESCRIPTION: [Clear description of the specific issue found]
+        DOCUMENT_QUOTE: "[Exact text from document that supports this finding]"
+        BUSINESS_IMPACT: [Specific business consequences]
+        RECOMMENDATION: [Specific action recommended]
+
+        IMPORTANT: Only report findings where you can quote specific text from the document. Do not report on clauses that are missing unless you can quote related text."""
         
         combined_prompt = f"""
         DOCUMENT ANALYSIS REQUEST:
         {user_prompt}
         
         DOCUMENT CONTENT TO ANALYZE:
-        {document_text[:2500]}  # Aggressive optimization for speed
+        {document_text[:8000]}  # Increased for better analysis
         
         INSTRUCTIONS:
-        Quickly identify the top 5-10 most critical legal risks in this document section. 
-        Focus on actionable findings that require immediate attention during contract negotiation."""
+        Analyze this document section and identify specific legal risks. Quote the exact text that supports each finding.
+        Focus on findings where you can cite specific clauses or provisions from the document text above."""
         
         # Retry logic with exponential backoff
         max_retries = 3

@@ -586,28 +586,71 @@ class LangGraphOrchestrator:
             raise e
     
     def _extract_findings_from_analysis(self, analysis: str, chunk_index: int) -> List[Dict[str, Any]]:
-        """Extract structured findings from comprehensive legal analysis"""
+        """Extract structured findings from the new structured format"""
         findings = []
         
-        # First, try to extract structured numbered sections (1. TITLE, 2. TITLE, etc.)
-        section_pattern = r'(\d+\.\s*[A-Z\s]+(?:RISKS?|PROVISIONS?|TERMS?|ISSUES?|CONCERNS?))\s*\n'
-        sections = re.split(section_pattern, analysis)
+        # Split by FINDING pattern to get individual findings
+        finding_pattern = r'FINDING\s+(\d+):\s*\n'
+        finding_sections = re.split(finding_pattern, analysis)
         
-        if len(sections) > 3:  # If we found structured sections
-            for i in range(1, len(sections), 2):  # Skip every other (section titles)
-                if i + 1 < len(sections):
-                    section_title = sections[i].strip()
-                    section_content = sections[i + 1].strip()
-                    
-                    # Extract sub-findings from each section
-                    sub_findings = self._extract_subsection_findings(section_content, section_title, chunk_index, len(findings))
-                    findings.extend(sub_findings)
+        # finding_sections will be: [text_before, finding_num1, finding_content1, finding_num2, finding_content2, ...]
+        for i in range(1, len(finding_sections), 2):
+            if i + 1 < len(finding_sections):
+                finding_num = finding_sections[i]
+                finding_content = finding_sections[i + 1].strip()
+                
+                finding = self._parse_structured_finding(finding_content, chunk_index, int(finding_num))
+                if finding:
+                    findings.append(finding)
         
-        # If structured extraction didn't work well, fall back to pattern-based extraction
-        if len(findings) < 3:
+        # If structured extraction didn't work, fall back to legacy parsing
+        if len(findings) == 0:
+            print(f"Structured parsing failed for chunk {chunk_index}, falling back to legacy extraction")
             findings = self._extract_pattern_based_findings(analysis, chunk_index)
         
         return findings
+    
+    def _parse_structured_finding(self, finding_content: str, chunk_index: int, finding_num: int) -> Dict[str, Any]:
+        """Parse a single structured finding with the new format"""
+        
+        # Extract fields using regex patterns
+        severity_match = re.search(r'SEVERITY:\s*([A-Z]+)', finding_content)
+        category_match = re.search(r'CATEGORY:\s*(.+)', finding_content)
+        description_match = re.search(r'DESCRIPTION:\s*(.+?)(?=\nDOCUMENT_QUOTE:)', finding_content, re.DOTALL)
+        quote_match = re.search(r'DOCUMENT_QUOTE:\s*"([^"]+)"', finding_content, re.DOTALL)
+        impact_match = re.search(r'BUSINESS_IMPACT:\s*(.+?)(?=\nRECOMMENDATION:)', finding_content, re.DOTALL)
+        recommendation_match = re.search(r'RECOMMENDATION:\s*(.+)', finding_content, re.DOTALL)
+        
+        # Validate required fields are present
+        if not severity_match or not description_match:
+            print(f"Required fields missing in finding {finding_num}")
+            return None
+        
+        severity = severity_match.group(1).lower()
+        if severity not in ['high', 'medium', 'low']:
+            severity = 'medium'  # Default fallback
+        
+        description = description_match.group(1).strip()
+        document_quote = quote_match.group(1).strip() if quote_match else ""
+        business_impact = impact_match.group(1).strip() if impact_match else ""
+        recommendation = recommendation_match.group(1).strip() if recommendation_match else ""
+        category = category_match.group(1).strip() if category_match else "GENERAL"
+        
+        # Calculate confidence based on presence of document quote
+        confidence = 0.95 if document_quote else 0.60
+        
+        return {
+            "id": f"chunk_{chunk_index}_finding_{finding_num}",
+            "severity": severity,
+            "description": description,
+            "chunk_index": chunk_index,
+            "confidence": confidence,
+            "category": category,
+            "document_section": None,  # Will be set from chunk context
+            "evidence": document_quote,  # Use the actual document quote as evidence
+            "business_impact": business_impact,
+            "recommendation": recommendation
+        }
     
     def _extract_subsection_findings(self, content: str, section_title: str, chunk_index: int, finding_offset: int) -> List[Dict[str, Any]]:
         """Extract findings from a structured section of analysis"""
@@ -1145,30 +1188,32 @@ ENHANCED LEGAL ANALYSIS SUMMARY - v2.0 (DETAILED REPORTING):
             detailed_report.append("CRITICAL HIGH-RISK ISSUES:")
             detailed_report.append("=" * 50)
             for i, finding in enumerate(high_risk, 1):
-                # Get the original evidence which contains business impact details
-                evidence = finding.get('evidence', finding.get('description', ''))
+                # Use structured data directly
                 document_section = finding.get('document_section', 'Unknown Section')
                 page_info = self._get_page_info_for_finding(finding)
+                category = finding.get('category', 'GENERAL')
                 
                 detailed_report.append(f"\n{i}. {finding['description']}")
                 detailed_report.append(f"   Document Location: {document_section}")
                 if page_info:
                     detailed_report.append(f"   Page Range: {page_info}")
                 detailed_report.append(f"   Risk Level: HIGH (Confidence: {finding.get('confidence', 0.9):.0%})")
+                detailed_report.append(f"   Category: {category}")
                 
-                # Extract business impact from evidence
-                business_impact = self._extract_business_impact(evidence)
+                # Use structured business impact
+                business_impact = finding.get('business_impact', '')
                 if business_impact:
                     detailed_report.append(f"   Business Impact: {business_impact}")
                 
-                # Extract recommendation if available
-                recommendation = self._extract_recommendation(evidence)
+                # Use structured recommendation
+                recommendation = finding.get('recommendation', '')
                 if recommendation:
                     detailed_report.append(f"   Recommendation: {recommendation}")
                 
-                # Add relevant text excerpt if available
-                if evidence and len(evidence) > 50:
-                    excerpt = evidence[:200] + "..." if len(evidence) > 200 else evidence
+                # Use document quote as evidence (this is now the actual document text)
+                evidence = finding.get('evidence', '')
+                if evidence and len(evidence) > 10:
+                    excerpt = evidence[:300] + "..." if len(evidence) > 300 else evidence
                     detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
                     
                 detailed_report.append("")  # Blank line
@@ -1177,27 +1222,29 @@ ENHANCED LEGAL ANALYSIS SUMMARY - v2.0 (DETAILED REPORTING):
             detailed_report.append("\nMEDIUM-RISK ISSUES:")
             detailed_report.append("=" * 50)
             for i, finding in enumerate(medium_risk, 1):
-                evidence = finding.get('evidence', finding.get('description', ''))
                 document_section = finding.get('document_section', 'Unknown Section')
                 page_info = self._get_page_info_for_finding(finding)
+                category = finding.get('category', 'GENERAL')
                 
                 detailed_report.append(f"\n{len(high_risk) + i}. {finding['description']}")
                 detailed_report.append(f"   Document Location: {document_section}")
                 if page_info:
                     detailed_report.append(f"   Page Range: {page_info}")
                 detailed_report.append(f"   Risk Level: MEDIUM (Confidence: {finding.get('confidence', 0.8):.0%})")
+                detailed_report.append(f"   Category: {category}")
                 
-                business_impact = self._extract_business_impact(evidence)
+                business_impact = finding.get('business_impact', '')
                 if business_impact:
                     detailed_report.append(f"   Business Impact: {business_impact}")
                 
-                recommendation = self._extract_recommendation(evidence)
+                recommendation = finding.get('recommendation', '')
                 if recommendation:
                     detailed_report.append(f"   Recommendation: {recommendation}")
                 
-                # Add relevant text excerpt if available
-                if evidence and len(evidence) > 50:
-                    excerpt = evidence[:150] + "..." if len(evidence) > 150 else evidence
+                # Use document quote as evidence
+                evidence = finding.get('evidence', '')
+                if evidence and len(evidence) > 10:
+                    excerpt = evidence[:200] + "..." if len(evidence) > 200 else evidence
                     detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
                     
                 detailed_report.append("")  # Blank line
@@ -1206,23 +1253,29 @@ ENHANCED LEGAL ANALYSIS SUMMARY - v2.0 (DETAILED REPORTING):
             detailed_report.append("\nLOW-RISK ISSUES:")
             detailed_report.append("=" * 50)
             for i, finding in enumerate(low_risk, 1):
-                evidence = finding.get('evidence', finding.get('description', ''))
                 document_section = finding.get('document_section', 'Unknown Section')
                 page_info = self._get_page_info_for_finding(finding)
+                category = finding.get('category', 'GENERAL')
                 
                 detailed_report.append(f"\n{len(high_risk) + len(medium_risk) + i}. {finding['description']}")
                 detailed_report.append(f"   Document Location: {document_section}")
                 if page_info:
                     detailed_report.append(f"   Page Range: {page_info}")
                 detailed_report.append(f"   Risk Level: LOW (Confidence: {finding.get('confidence', 0.7):.0%})")
+                detailed_report.append(f"   Category: {category}")
                 
-                business_impact = self._extract_business_impact(evidence)
+                business_impact = finding.get('business_impact', '')
                 if business_impact:
                     detailed_report.append(f"   Business Impact: {business_impact}")
                 
-                # Add relevant text excerpt for context
-                if evidence and len(evidence) > 30:
-                    excerpt = evidence[:100] + "..." if len(evidence) > 100 else evidence
+                recommendation = finding.get('recommendation', '')
+                if recommendation:
+                    detailed_report.append(f"   Recommendation: {recommendation}")
+                
+                # Use document quote as evidence
+                evidence = finding.get('evidence', '')
+                if evidence and len(evidence) > 10:
+                    excerpt = evidence[:150] + "..." if len(evidence) > 150 else evidence
                     detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
         
         # Add summary recommendations
