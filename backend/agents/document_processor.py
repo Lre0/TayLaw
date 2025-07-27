@@ -24,9 +24,19 @@ class DocumentProcessor:
             raise ValueError(f"Unsupported file format: {file_extension}")
     
     async def _extract_pdf_simple(self, file_content: bytes) -> str:
-        """Enhanced PDF extraction with proper formatting and line break preservation"""
+        """Enhanced PDF extraction with header/footer removal and better formatting"""
         
-        # Method 1: PyMuPDF with enhanced formatting preservation
+        # Method 1: Try enhanced processor first
+        try:
+            from .enhanced_pdf_processor import extract_pdf_enhanced
+            result = await extract_pdf_enhanced(file_content, "document.pdf")
+            if result and len(result.strip()) > 100 and not result.startswith("Error:"):
+                print(f"Enhanced PDF processor successful: {len(result)} chars")
+                return result
+        except Exception as e:
+            print(f"Enhanced PDF processor failed: {e}")
+        
+        # Method 2: PyMuPDF with enhanced formatting preservation (fallback)
         try:
             doc = fitz.open(stream=file_content, filetype="pdf")
             text_parts = []
@@ -51,7 +61,7 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Enhanced PyMuPDF failed: {e}")
         
-        # Method 2: pdfplumber with layout preservation
+        # Method 3: pdfplumber with layout preservation
         try:
             with pdfplumber.open(io.BytesIO(file_content)) as pdf:
                 text_parts = []
@@ -71,7 +81,7 @@ class DocumentProcessor:
         except Exception as e:
             print(f"Enhanced pdfplumber failed: {e}")
         
-        # Method 3: Fallback to basic extraction
+        # Method 4: Fallback to basic extraction
         try:
             doc = fitz.open(stream=file_content, filetype="pdf")
             text_parts = []
@@ -123,28 +133,17 @@ class DocumentProcessor:
                     continue
                     
                 line_text = ""
-                has_bold = False
                 
                 for span in line["spans"]:
                     text = span.get("text", "").strip()
                     if text:
-                        # Check for bold formatting
-                        font = span.get("font", "").lower()
-                        flags = span.get("flags", 0)
-                        
-                        # Bold detection: flags & 16 or 'bold' in font name
-                        is_bold = (flags & 16) or 'bold' in font
-                        
-                        if is_bold and text:
-                            text = f"**{text}**"  # Mark bold text
-                            has_bold = True
-                        
+                        # Remove bold detection - just extract plain text
                         line_text += text + " "
                 
                 line_text = line_text.strip()
                 if line_text:
                     # Preserve important line breaks for legal structure
-                    if self._is_legal_header(line_text) or has_bold:
+                    if self._is_legal_header(line_text):
                         if block_lines:  # Add spacing before headers
                             block_lines.append("")
                         block_lines.append(line_text)
