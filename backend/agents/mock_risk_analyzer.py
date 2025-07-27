@@ -19,71 +19,41 @@ class MockRiskAnalyzer:
         # Analyze content to generate realistic findings
         findings = self._generate_realistic_findings(document_text)
         
-        # Generate comprehensive mock analysis
+        # Generate comprehensive mock analysis in the new legal format
         analysis = f"""
-COMPREHENSIVE LEGAL RISK ASSESSMENT
+A. Commercial Terms of Service
 
-EXECUTIVE SUMMARY:
-This document section contains multiple high-risk provisions that significantly favor the service provider and expose the customer to substantial legal and business risks. The terms require immediate attention and negotiation.
+1. Payment Terms and Fee Structure (Section 1): High risk due to limited customer protection against fee changes
+Additional Guidance: The Terms of Service provide that fees are subject to unilateral changes with only 30 days notice. This creates potential for unexpected cost increases that could impact CLIENT's budget planning. The payment terms place full tax burden on the customer and include penalty interest charges. We recommend negotiating caps on fee increases and shared responsibility for tax obligations.
 
-LIABILITY AND INDEMNIFICATION ANALYSIS:
-- HIGH RISK: Liability is severely limited to fees paid in previous 12 months, which may be inadequate for actual damages
-- HIGH RISK: All consequential, incidental, and indirect damages are excluded, including lost profits and business interruption
-- MEDIUM RISK: Customer bears indemnification obligations for third-party claims related to their use
-- RECOMMENDATION: Negotiate higher liability caps and carve-outs for data breaches, IP infringement, and gross negligence
+2. Termination Rights (Section 2): Medium-to-high risk due to asymmetric termination provisions
+Additional Guidance: The service provider retains broad termination rights with minimal notice requirements, while customer termination rights are more restrictive. This creates operational uncertainty for CLIENT's business continuity. The immediate termination clause for material breach lacks adequate cure period protections. We recommend negotiating mutual termination rights and reasonable cure periods.
 
-INTELLECTUAL PROPERTY RISKS:
-- MEDIUM RISK: Service provider retains broad rights to use customer feedback and data
-- MEDIUM RISK: Limited IP protections for customer-generated content
-- LOW RISK: Standard IP indemnification provided by service provider
-- RECOMMENDATION: Ensure stronger data ownership rights and restrict provider's use of customer data
+B. Liability and Risk Allocation
 
-TERMINATION AND CONTRACT DURATION:
-- HIGH RISK: Service provider can terminate immediately with minimal notice requirements
-- MEDIUM RISK: Asymmetric termination rights favor the provider
-- MEDIUM RISK: Broad suspension rights allow provider to cut off service without customer consent
-- RECOMMENDATION: Negotiate mutual termination rights and require reasonable cure periods
+1. Liability Limitations (Section 3): High risk due to inadequate damage caps for business operations
+Additional Guidance: The Terms limit Company's aggregate liability to fees paid in the preceding twelve months, which may be substantially less than actual business damages. This limitation could leave CLIENT exposed to significant unrecovered losses in case of service failures or data incidents. We recommend negotiating higher liability caps that reflect the true business impact of service disruption.
 
-FINANCIAL AND PAYMENT RISKS:
-- MEDIUM RISK: Fees are subject to unilateral changes with only 30 days notice
-- MEDIUM RISK: Customer responsible for all taxes and withholding obligations
-- LOW RISK: Standard payment terms and credit arrangements
-- RECOMMENDATION: Cap fee increases and negotiate fixed-term pricing commitments
+2. Consequential Damages Exclusion (Section 3): High risk exposure for business-critical operations
+Additional Guidance: The Terms exclude all liability for consequential, indirect, incidental, and punitive damages. For business-critical services, this could include lost profits, business interruption, and reputational damage. CLIENT should consider whether these exclusions are appropriate given the service's importance to business operations.
 
-COMPLIANCE AND REGULATORY:
-- MEDIUM RISK: Customer bears primary responsibility for regulatory compliance
-- MEDIUM RISK: Export control and sanctions compliance requirements may be burdensome
-- LOW RISK: Standard data processing agreement incorporated
-- RECOMMENDATION: Ensure adequate compliance support and shared responsibility for regulatory changes
+3. Customer Indemnification (Section 3): Medium risk due to broad scope of indemnification obligations
+Additional Guidance: CLIENT is required to indemnify Company against third-party claims arising from Customer's use of the Service. While this is common, the scope should be carefully reviewed to ensure it doesn't extend beyond reasonable use-related claims. We recommend negotiating mutual indemnification and carve-outs for Company's negligence or misconduct.
 
-OPERATIONAL AND PERFORMANCE RISKS:
-- HIGH RISK: No service level agreements or uptime guarantees
-- HIGH RISK: "As is" provision with no warranties creates significant operational risk
-- MEDIUM RISK: Limited recourse for service outages or performance issues
-- RECOMMENDATION: Negotiate SLA commitments and service credits for downtime
+C. Data Processing and Privacy
 
-BOILERPLATE AND GOVERNANCE:
-- MEDIUM RISK: Mandatory arbitration limits customer's legal options
-- MEDIUM RISK: Jury waiver and class action waiver reduce customer leverage
-- LOW RISK: Standard governing law and venue provisions
-- RECOMMENDATION: Preserve right to seek injunctive relief and negotiate arbitration alternatives
+1. Data Retention Policies (Section 4): Medium risk for data governance compliance
+Additional Guidance: The Terms provide for 90-day data retention after termination, which may not align with CLIENT's data retention policies or regulatory requirements. Cross-border data transfers to worldwide service providers could raise compliance concerns under applicable privacy laws. We recommend ensuring data retention terms align with CLIENT's policies and that adequate data protection safeguards are in place.
 
-CRITICAL RED FLAGS IDENTIFIED:
-1. Unlimited liability exclusions that could expose customer to uncapped risk
-2. One-sided termination rights allowing immediate service cutoff
-3. No warranties or SLA commitments for business-critical services
-4. Broad indemnification obligations placing risk on customer
-5. Unilateral right to modify terms with minimal notice
+D. Intellectual Property
 
-OVERALL RISK RATING: HIGH
-This agreement strongly favors the service provider and contains multiple provisions that could result in significant business disruption, financial exposure, and operational risk for the customer organization.
+1. Service Provider IP Rights (Section 5): Medium risk regarding customer data usage
+Additional Guidance: The Terms grant the service provider broad rights to use customer data to improve the Service. While this is increasingly common, CLIENT should ensure this doesn't extend to confidential or proprietary information. We recommend clarifying the scope of permitted data use and ensuring adequate confidentiality protections.
 
-IMMEDIATE RECOMMENDATIONS:
-- Negotiate liability caps that reflect actual business impact
-- Require mutual termination rights and reasonable cure periods  
-- Demand service level commitments appropriate for business criticality
-- Limit indemnification scope and add carve-outs for provider negligence
-- Preserve customer's right to judicial remedies for critical disputes
+E. Other Legal Issues
+
+1. Service Warranties and Disclaimers (Overall): High risk due to "as is" service provision
+Additional Guidance: The Terms disclaim most warranties and provide services "as is" without performance guarantees. For business-critical applications, this creates operational uncertainty and limits recourse for service deficiencies. CLIENT should consider negotiating appropriate service level commitments and warranties for the intended use case.
 """
         
         return analysis.strip()

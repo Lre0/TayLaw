@@ -256,7 +256,7 @@ class LangGraphOrchestrator:
                 overlap_start = max(0, start_pos - overlap_size)
                 overlap_text = text[overlap_start:start_pos]
             
-            # Fast section context (simplified)
+            # Enhanced section context with lettered section support
             section_context = self._find_section_fast(start_pos)
             
             # Simple page estimation
@@ -288,53 +288,110 @@ class LangGraphOrchestrator:
         return chunks
     
     def _extract_section_headers_fast(self, text: str) -> List[Dict[str, Any]]:
-        """Fast section header extraction with minimal regex"""
+        """Enhanced section header extraction with lettered sections support"""
         headers = []
         
-        # Simplified patterns for speed - only most common ones
+        # Enhanced patterns including lettered sections (A., B., C., etc.)
         key_patterns = [
+            # Lettered sections - highest priority for legal documents
+            (r'(?i)^([A-Z]\.\s+[^\n]{1,80})', 'lettered_section'),
+            (r'(?i)\n\s*([A-Z]\.\s+[^\n]{1,80})', 'lettered_section'),
+            
+            # Numbered sections
             (r'(?i)\n\s*(\d+\.\s+[A-Z][^\n]{1,50})', 'numbered_section'),
+            
+            # Articles and Sections
             (r'(?i)\n\s*(ARTICLE\s+[IVX]+[^\n]{1,30})', 'article'),
-            (r'(?i)\n\s*(SECTION\s+\d+[^\n]{1,30})', 'section'),
-            (r'(?i)\n\s*(DEFINITIONS?[^\n]{0,20})', 'definitions'),
-            (r'(?i)\n\s*(LIABILITY[^\n]{0,20})', 'liability_section'),
-            (r'(?i)\n\s*(TERMINATION[^\n]{0,20})', 'termination_section')
+            (r'(?i)\n\s*(SECTION\s+[A-Z0-9]+[^\n]{1,50})', 'section'),
+            
+            # Legal topic headers
+            (r'(?i)\n\s*(DEFINITIONS?[^\n]{0,30})', 'definitions'),
+            (r'(?i)\n\s*(LIABILITY[^\n]{0,30})', 'liability_section'),
+            (r'(?i)\n\s*(TERMINATION[^\n]{0,30})', 'termination_section'),
+            (r'(?i)\n\s*(CONFIDENTIALITY[^\n]{0,30})', 'confidentiality_section'),
+            (r'(?i)\n\s*(INTELLECTUAL\s+PROPERTY[^\n]{0,30})', 'ip_section'),
+            (r'(?i)\n\s*(INDEMNIFICATION[^\n]{0,30})', 'indemnification_section'),
+            (r'(?i)\n\s*(WARRANTIES?[^\n]{0,30})', 'warranty_section'),
+            (r'(?i)\n\s*(DISPUTES?[^\n]{0,30})', 'dispute_section'),
         ]
         
         # Single pass through text
         for pattern, section_type in key_patterns:
             for match in re.finditer(pattern, text):
+                header_text = match.group(1).strip()
+                
+                # Clean up header text
+                header_text = re.sub(r'\s+', ' ', header_text)
+                
                 headers.append({
-                    'text': match.group(1).strip(),
+                    'text': header_text,
                     'type': section_type,
-                    'position': match.start()
+                    'position': match.start(),
+                    'normalized': self._normalize_section_header(header_text)
                 })
         
-        headers.sort(key=lambda x: x['position'])
-        return headers
+        # Remove duplicates and sort by position
+        seen_positions = set()
+        unique_headers = []
+        for header in headers:
+            if header['position'] not in seen_positions:
+                seen_positions.add(header['position'])
+                unique_headers.append(header)
+        
+        unique_headers.sort(key=lambda x: x['position'])
+        return unique_headers
     
     def _find_section_fast(self, char_position: int) -> str:
-        """Fast section lookup using binary search concept"""
+        """Enhanced section lookup with proper lettered section support"""
         if not self.document_sections:
             return "Document Section"
         
-        # Find the last section before this position
+        # Find the most recent section before this position
         current_section = "Document Section"
         for section in self.document_sections:
             if section['position'] <= char_position:
-                current_section = section['text'][:30]  # Truncate for display
+                # Use normalized name if available, otherwise use text
+                if 'normalized' in section and section['normalized']:
+                    current_section = section['normalized']
+                else:
+                    current_section = section['text'][:50]  # Increased limit for full section names
             else:
                 break
         
         return current_section
     
     def _normalize_section_header(self, header: str) -> str:
-        """Normalize section header for consistent display"""
+        """Normalize section header for consistent display with lettered section support"""
         # Clean up formatting
         cleaned = re.sub(r'\s+', ' ', header.strip())
-        # Capitalize appropriately
-        if cleaned.isupper():
+        
+        # Handle lettered sections specially (A., B., C., etc.)
+        lettered_match = re.match(r'^([A-Z]\.)\s*(.+)', cleaned)
+        if lettered_match:
+            letter = lettered_match.group(1)
+            title = lettered_match.group(2)
+            
+            # Capitalize title appropriately
+            if title.isupper():
+                title = title.title()
+            
+            return f"Section {letter} {title}"
+        
+        # Handle numbered sections (1., 2., etc.)
+        numbered_match = re.match(r'^(\d+\.)\s*(.+)', cleaned)
+        if numbered_match:
+            number = numbered_match.group(1)
+            title = numbered_match.group(2)
+            
+            if title.isupper():
+                title = title.title()
+            
+            return f"Section {number} {title}"
+        
+        # Handle other section types
+        if cleaned.isupper() and len(cleaned) > 5:
             cleaned = cleaned.title()
+        
         return cleaned
     
     def _find_section_for_chunk(self, chunk_content: str, chunk_start_pos: int) -> str:
@@ -586,7 +643,207 @@ class LangGraphOrchestrator:
             raise e
     
     def _extract_findings_from_analysis(self, analysis: str, chunk_index: int) -> List[Dict[str, Any]]:
-        """Extract structured findings from the new structured format"""
+        """Extract structured findings from the new legal report format"""
+        findings = []
+        
+        # First try to parse the new lettered section format (A., B., C., etc.)
+        findings = self._extract_lettered_section_findings(analysis, chunk_index)
+        
+        # If lettered extraction didn't work, try the old FINDING format
+        if len(findings) == 0:
+            print(f"Lettered section parsing failed for chunk {chunk_index}, trying legacy FINDING format")
+            findings = self._extract_old_finding_format(analysis, chunk_index)
+        
+        # Final fallback to pattern-based extraction
+        if len(findings) == 0:
+            print(f"All structured parsing failed for chunk {chunk_index}, falling back to pattern extraction")
+            findings = self._extract_pattern_based_findings(analysis, chunk_index)
+        
+        return findings
+    
+    def _extract_lettered_section_findings(self, analysis: str, chunk_index: int) -> List[Dict[str, Any]]:
+        """Extract findings from lettered section format (A., B., C., etc.)"""
+        findings = []
+        
+        # Split by lettered main sections (A., B., C., etc.)
+        section_pattern = r'\n([A-F]\.\s+[^\n]+)'
+        sections = re.split(section_pattern, analysis)
+        
+        # sections will be: [text_before, section_header1, section_content1, section_header2, section_content2, ...]
+        for i in range(1, len(sections), 2):
+            if i + 1 < len(sections):
+                section_header = sections[i].strip()
+                section_content = sections[i + 1].strip()
+                
+                # Extract category from section header (e.g., "A. Commercial Terms" -> "Commercial Terms")
+                category_match = re.match(r'[A-F]\.\s+(.+)', section_header)
+                category = category_match.group(1) if category_match else "GENERAL"
+                
+                # Find numbered subsections within this lettered section
+                subsection_findings = self._extract_numbered_subsections(section_content, category, chunk_index, len(findings))
+                findings.extend(subsection_findings)
+        
+        return findings
+    
+    def _extract_numbered_subsections(self, section_content: str, category: str, chunk_index: int, finding_offset: int) -> List[Dict[str, Any]]:
+        """Extract numbered subsections (1., 2., 3., etc.) from a lettered section"""
+        findings = []
+        
+        # Split by numbered subsections
+        subsection_pattern = r'\n(\d+\.\s+[^:]+):'
+        subsections = re.split(subsection_pattern, section_content)
+        
+        for i in range(1, len(subsections), 2):
+            if i + 1 < len(subsections):
+                subsection_title = subsections[i].strip()
+                subsection_content = subsections[i + 1].strip()
+                
+                # Extract the one-line summary (everything before "Additional Guidance:")
+                guidance_split = subsection_content.split('Additional Guidance:', 1)
+                one_line_summary = guidance_split[0].strip()
+                detailed_guidance = guidance_split[1].strip() if len(guidance_split) > 1 else ""
+                
+                # Determine risk level from one-line summary or content
+                risk_level = self._determine_risk_level_from_content(one_line_summary + " " + detailed_guidance)
+                
+                # Extract section reference if present (e.g., "Section 5.2", "Clause 3.1")
+                section_ref_match = re.search(r'\(Section\s+[\w\.]+\)', subsection_title)
+                section_reference = section_ref_match.group(0) if section_ref_match else ""
+                
+                # Clean up the title by removing section reference
+                clean_title = re.sub(r'\s*\(Section\s+[\w\.]+\)', '', subsection_title)
+                
+                # Extract business impact and recommendations from detailed guidance
+                business_impact = self._extract_business_impact_from_guidance(detailed_guidance)
+                recommendation = self._extract_recommendation_from_guidance(detailed_guidance)
+                
+                # Look for quoted text as evidence
+                evidence = self._extract_quoted_evidence(detailed_guidance)
+                
+                finding = {
+                    "id": f"chunk_{chunk_index}_finding_{finding_offset + len(findings)}",
+                    "severity": risk_level,
+                    "description": f"{clean_title}: {one_line_summary}",
+                    "chunk_index": chunk_index,
+                    "confidence": 0.90,  # High confidence for structured legal analysis
+                    "category": category,
+                    "document_section": section_reference,
+                    "evidence": evidence,
+                    "business_impact": business_impact,
+                    "recommendation": recommendation,
+                    "additional_guidance": detailed_guidance,
+                    "section_title": clean_title,
+                    "one_line_summary": one_line_summary
+                }
+                
+                findings.append(finding)
+        
+        return findings
+    
+    def _determine_risk_level_from_content(self, content: str) -> str:
+        """Determine risk level from content analysis"""
+        content_lower = content.lower()
+        
+        # High risk indicators
+        high_risk_terms = [
+            'red coded', 'high risk', 'critical', 'significant risk', 'major concern',
+            'strongly recommend', 'should be rejected', 'dangerous', 'problematic',
+            'unlimited liability', 'material breach', 'immediate attention'
+        ]
+        
+        # Medium risk indicators  
+        medium_risk_terms = [
+            'yellow coded', 'medium risk', 'moderate risk', 'concerning', 'noteworthy',
+            'should negotiate', 'recommend review', 'may want to', 'unclear', 'ambiguous'
+        ]
+        
+        # Low risk indicators
+        low_risk_terms = [
+            'green coded', 'low risk', 'minor', 'acceptable', 'reasonable', 'standard',
+            'typical', 'adequate protection', 'favorable'
+        ]
+        
+        # Check in order of priority
+        for term in high_risk_terms:
+            if term in content_lower:
+                return 'high'
+        
+        for term in medium_risk_terms:
+            if term in content_lower:
+                return 'medium'
+                
+        for term in low_risk_terms:
+            if term in content_lower:
+                return 'low'
+        
+        # Default to medium if uncertain
+        return 'medium'
+    
+    def _extract_business_impact_from_guidance(self, guidance: str) -> str:
+        """Extract business impact from detailed guidance"""
+        # Look for explicit business impact statements
+        impact_patterns = [
+            r'(?:could|may|might|will|would)\s+(?:result in|lead to|cause|expose|create|impact)[^.]*',
+            r'business\s+(?:risk|impact|concern|consequence)[^.]*',
+            r'(?:financial|operational|legal)\s+(?:risk|impact|exposure)[^.]*',
+            r'CLIENT\s+(?:could|may|will|would)[^.]*'
+        ]
+        
+        for pattern in impact_patterns:
+            match = re.search(pattern, guidance, re.IGNORECASE)
+            if match:
+                impact = match.group(0).strip()
+                if len(impact) > 200:
+                    impact = impact[:200] + "..."
+                return impact
+        
+        # Fallback: take first sentence that mentions impact-related terms
+        sentences = guidance.split('.')
+        for sentence in sentences:
+            if any(word in sentence.lower() for word in ['risk', 'impact', 'expose', 'consequence', 'result']):
+                return sentence.strip()[:200]
+        
+        return ""
+    
+    def _extract_recommendation_from_guidance(self, guidance: str) -> str:
+        """Extract recommendation from detailed guidance"""
+        # Look for explicit recommendations
+        rec_patterns = [
+            r'(?:recommend|suggest|advise|should|must|need to)[^.]*',
+            r'CLIENT\s+(?:should|could|may want to)[^.]*',
+            r'(?:negotiate|request|seek|clarify|amend)[^.]*'
+        ]
+        
+        for pattern in rec_patterns:
+            match = re.search(pattern, guidance, re.IGNORECASE)
+            if match:
+                rec = match.group(0).strip()
+                if len(rec) > 150:
+                    rec = rec[:150] + "..."
+                return rec
+        
+        return ""
+    
+    def _extract_quoted_evidence(self, guidance: str) -> str:
+        """Extract quoted text evidence from guidance"""
+        # Look for quoted text
+        quote_patterns = [
+            r'"([^"]+)"',
+            r"'([^']+)'",
+            r'`([^`]+)`'
+        ]
+        
+        for pattern in quote_patterns:
+            matches = re.findall(pattern, guidance)
+            if matches:
+                # Return the longest quote as evidence
+                longest_quote = max(matches, key=len)
+                return longest_quote
+        
+        return ""
+    
+    def _extract_old_finding_format(self, analysis: str, chunk_index: int) -> List[Dict[str, Any]]:
+        """Extract findings from old FINDING format for backward compatibility"""
         findings = []
         
         # Split by FINDING pattern to get individual findings
@@ -602,11 +859,6 @@ class LangGraphOrchestrator:
                 finding = self._parse_structured_finding(finding_content, chunk_index, int(finding_num))
                 if finding:
                     findings.append(finding)
-        
-        # If structured extraction didn't work, fall back to legacy parsing
-        if len(findings) == 0:
-            print(f"Structured parsing failed for chunk {chunk_index}, falling back to legacy extraction")
-            findings = self._extract_pattern_based_findings(analysis, chunk_index)
         
         return findings
     
@@ -1166,13 +1418,16 @@ class LangGraphOrchestrator:
         detailed_findings = self._format_detailed_findings(high_risk, medium_risk, low_risk)
         
         combined_analysis = f"""
-ENHANCED LEGAL ANALYSIS SUMMARY - v2.0 (DETAILED REPORTING):
-- Total chunks processed: {len(chunk_analyses)}
-- High-risk findings: {len(high_risk)}
-- Medium-risk findings: {len(medium_risk)}
-- Low-risk findings: {len(low_risk)}
-- Average confidence: {avg_confidence:.2f}
-- Cross-references identified: {len(cross_references)}
+LEGAL ANALYSIS REPORT - PROFESSIONAL FORMAT
+===========================================
+
+EXECUTIVE SUMMARY:
+- Document processed: {len(chunk_analyses)} sections analyzed
+- Red coded (high-risk) findings: {len(high_risk)}
+- Yellow coded (medium-risk) findings: {len(medium_risk)}
+- Green coded (low-risk/favorable) findings: {len(low_risk)}
+- Analysis confidence: {avg_confidence:.0%}
+- Cross-references validated: {len(cross_references)}
 
 {detailed_findings}
         """
@@ -1180,113 +1435,168 @@ ENHANCED LEGAL ANALYSIS SUMMARY - v2.0 (DETAILED REPORTING):
         return combined_analysis
     
     def _format_detailed_findings(self, high_risk: List, medium_risk: List, low_risk: List) -> str:
-        """Format detailed issue-by-issue breakdown with business impact"""
+        """Format detailed issue-by-issue breakdown in professional legal report format"""
         
-        detailed_report = []
+        # Create header with risk level definitions
+        detailed_report = [
+            "• Green coded issues represent those matters which we consider are either favourable to CLIENT, or for which there are likely adequate protections in place.",
+            "",
+            "• Yellow coded issues represent those matters which we consider are of medium risk to CLIENT in the circumstances.",
+            "",
+            "• Red coded issues represent those matters which we consider are of medium-to-high risk in the circumstances.",
+            "",
+            "",
+            "In all matters which involve risk to CLIENT, CLIENT will need to consider if they are material enough to require any change to the clause or to risk management arrangements that CLIENT have in place.",
+            "",
+            "",
+            "Contract Terms – Key Issues List",
+            ""
+        ]
         
-        if high_risk:
-            detailed_report.append("CRITICAL HIGH-RISK ISSUES:")
-            detailed_report.append("=" * 50)
-            for i, finding in enumerate(high_risk, 1):
-                # Use structured data directly
-                document_section = finding.get('document_section', 'Unknown Section')
-                page_info = self._get_page_info_for_finding(finding)
-                category = finding.get('category', 'GENERAL')
+        # Group findings by category to create lettered sections
+        findings_by_category = self._group_findings_by_category([*high_risk, *medium_risk, *low_risk])
+        
+        section_letter = 'A'
+        for category, findings in findings_by_category.items():
+            if not findings:
+                continue
                 
-                detailed_report.append(f"\n{i}. {finding['description']}")
-                detailed_report.append(f"   Document Location: {document_section}")
-                if page_info:
-                    detailed_report.append(f"   Page Range: {page_info}")
-                detailed_report.append(f"   Risk Level: HIGH (Confidence: {finding.get('confidence', 0.9):.0%})")
-                detailed_report.append(f"   Category: {category}")
+            detailed_report.append(f"{section_letter}.\t{category}")
+            detailed_report.append("")
+            
+            # Number subsections within each category
+            for i, finding in enumerate(findings, 1):
+                # Format as numbered subsection
+                section_title = finding.get('section_title', finding.get('description', 'Issue'))
+                section_ref = finding.get('document_section', '')
+                one_line_summary = finding.get('one_line_summary', '')
                 
-                # Use structured business impact
-                business_impact = finding.get('business_impact', '')
-                if business_impact:
-                    detailed_report.append(f"   Business Impact: {business_impact}")
+                # Create the title line with section reference
+                if section_ref:
+                    title_line = f"{i}.\t{section_title} {section_ref}: {one_line_summary}"
+                else:
+                    title_line = f"{i}.\t{section_title}: {one_line_summary}"
                 
-                # Use structured recommendation
-                recommendation = finding.get('recommendation', '')
-                if recommendation:
-                    detailed_report.append(f"   Recommendation: {recommendation}")
+                detailed_report.append(title_line)
                 
-                # Use document quote as evidence (this is now the actual document text)
-                evidence = finding.get('evidence', '')
-                if evidence and len(evidence) > 10:
-                    excerpt = evidence[:300] + "..." if len(evidence) > 300 else evidence
-                    detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
+                # Add the detailed guidance
+                additional_guidance = finding.get('additional_guidance', '')
+                if additional_guidance:
+                    detailed_report.append(f"Additional Guidance: {additional_guidance}")
+                else:
+                    # Fallback to building guidance from other fields
+                    guidance_parts = []
                     
-                detailed_report.append("")  # Blank line
-        
-        if medium_risk:
-            detailed_report.append("\nMEDIUM-RISK ISSUES:")
-            detailed_report.append("=" * 50)
-            for i, finding in enumerate(medium_risk, 1):
-                document_section = finding.get('document_section', 'Unknown Section')
-                page_info = self._get_page_info_for_finding(finding)
-                category = finding.get('category', 'GENERAL')
-                
-                detailed_report.append(f"\n{len(high_risk) + i}. {finding['description']}")
-                detailed_report.append(f"   Document Location: {document_section}")
-                if page_info:
-                    detailed_report.append(f"   Page Range: {page_info}")
-                detailed_report.append(f"   Risk Level: MEDIUM (Confidence: {finding.get('confidence', 0.8):.0%})")
-                detailed_report.append(f"   Category: {category}")
-                
-                business_impact = finding.get('business_impact', '')
-                if business_impact:
-                    detailed_report.append(f"   Business Impact: {business_impact}")
-                
-                recommendation = finding.get('recommendation', '')
-                if recommendation:
-                    detailed_report.append(f"   Recommendation: {recommendation}")
-                
-                # Use document quote as evidence
-                evidence = finding.get('evidence', '')
-                if evidence and len(evidence) > 10:
-                    excerpt = evidence[:200] + "..." if len(evidence) > 200 else evidence
-                    detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
+                    # Add evidence/quoted text
+                    evidence = finding.get('evidence', '')
+                    if evidence:
+                        guidance_parts.append(f'The document provides: "{evidence}"')
                     
-                detailed_report.append("")  # Blank line
+                    # Add business impact
+                    business_impact = finding.get('business_impact', '')
+                    if business_impact:
+                        guidance_parts.append(business_impact)
+                    
+                    # Add recommendation
+                    recommendation = finding.get('recommendation', '')
+                    if recommendation:
+                        guidance_parts.append(recommendation)
+                    
+                    if guidance_parts:
+                        detailed_report.append(f"Additional Guidance: {' '.join(guidance_parts)}")
+                
+                detailed_report.append("")  # Blank line between subsections
+            
+            # Move to next letter
+            section_letter = chr(ord(section_letter) + 1)
         
-        if low_risk:
-            detailed_report.append("\nLOW-RISK ISSUES:")
-            detailed_report.append("=" * 50)
-            for i, finding in enumerate(low_risk, 1):
-                document_section = finding.get('document_section', 'Unknown Section')
-                page_info = self._get_page_info_for_finding(finding)
-                category = finding.get('category', 'GENERAL')
-                
-                detailed_report.append(f"\n{len(high_risk) + len(medium_risk) + i}. {finding['description']}")
-                detailed_report.append(f"   Document Location: {document_section}")
-                if page_info:
-                    detailed_report.append(f"   Page Range: {page_info}")
-                detailed_report.append(f"   Risk Level: LOW (Confidence: {finding.get('confidence', 0.7):.0%})")
-                detailed_report.append(f"   Category: {category}")
-                
-                business_impact = finding.get('business_impact', '')
-                if business_impact:
-                    detailed_report.append(f"   Business Impact: {business_impact}")
-                
-                recommendation = finding.get('recommendation', '')
-                if recommendation:
-                    detailed_report.append(f"   Recommendation: {recommendation}")
-                
-                # Use document quote as evidence
-                evidence = finding.get('evidence', '')
-                if evidence and len(evidence) > 10:
-                    excerpt = evidence[:150] + "..." if len(evidence) > 150 else evidence
-                    detailed_report.append(f"   Relevant Text: \"{excerpt}\"")
-        
-        # Add summary recommendations
-        if high_risk:
-            detailed_report.append("\n*** IMMEDIATE ACTION REQUIRED ***")
-            detailed_report.append("=" * 50)
-            detailed_report.append("The high-risk issues identified above require immediate attention during contract negotiation.")
-            detailed_report.append("These provisions significantly favor the service provider and could expose your organization to substantial")
-            detailed_report.append("legal, financial, and operational risks. Consider engaging legal counsel for these items.")
+        # Add materiality assessment reminder at the end
+        if high_risk or medium_risk:
+            detailed_report.extend([
+                "",
+                "MATERIALITY ASSESSMENT:",
+                "=" * 30,
+                "CLIENT should assess whether the risks identified above are material enough to require:",
+                "• Specific amendments to contract clauses",
+                "• Enhanced risk management arrangements", 
+                "• Legal review and negotiation strategy",
+                "• Escalation to senior management or board level"
+            ])
         
         return "\n".join(detailed_report)
+    
+    def _group_findings_by_category(self, all_findings: List) -> Dict[str, List]:
+        """Group findings by legal category for structured reporting"""
+        categories = {
+            "Commercial Terms of Service": [],
+            "Data Processing and Privacy": [],
+            "Liability and Risk Allocation": [],
+            "Intellectual Property": [],
+            "Compliance and Regulatory": [],
+            "Other Legal Issues": []
+        }
+        
+        # Enhanced mapping from AI-generated categories to standard legal categories
+        category_mapping = {
+            # Commercial Terms variations
+            "Commercial Terms": "Commercial Terms of Service",
+            "Commercial Terms of Service": "Commercial Terms of Service",
+            "Payment": "Commercial Terms of Service", 
+            "Termination": "Commercial Terms of Service",
+            "Service Levels": "Commercial Terms of Service",
+            "FINANCIAL": "Commercial Terms of Service",
+            "PERFORMANCE": "Commercial Terms of Service",
+            
+            # Data Processing variations
+            "Data Processing": "Data Processing and Privacy", 
+            "Data Processing and Privacy": "Data Processing and Privacy",
+            "Privacy": "Data Processing and Privacy",
+            "Data Protection": "Data Processing and Privacy",
+            "COMPLIANCE": "Data Processing and Privacy",
+            
+            # Liability variations
+            "Liability": "Liability and Risk Allocation",
+            "Liability and Risk Allocation": "Liability and Risk Allocation",
+            "Indemnification": "Liability and Risk Allocation",
+            "Insurance": "Liability and Risk Allocation",
+            "Risk": "Liability and Risk Allocation",
+            "LIABILITY": "Liability and Risk Allocation",
+            
+            # IP variations
+            "IP": "Intellectual Property",
+            "Intellectual Property": "Intellectual Property",
+            "Confidentiality": "Intellectual Property",
+            "Patents": "Intellectual Property",
+            "Copyright": "Intellectual Property",
+            "Trade Secrets": "Intellectual Property",
+            "INTELLECTUAL PROPERTY": "Intellectual Property",
+            
+            # Compliance variations
+            "Compliance": "Compliance and Regulatory",
+            "Compliance and Regulatory": "Compliance and Regulatory",
+            "Regulatory": "Compliance and Regulatory",
+            "Audit": "Compliance and Regulatory",
+            "Dispute Resolution": "Compliance and Regulatory",
+            "Governing Law": "Compliance and Regulatory",
+            
+            # Other/General variations
+            "GENERAL": "Other Legal Issues",
+            "Other": "Other Legal Issues",
+            "Miscellaneous": "Other Legal Issues",
+            "Assignment": "Other Legal Issues",
+            "Force Majeure": "Other Legal Issues",
+            "Notices": "Other Legal Issues",
+            "Publicity": "Other Legal Issues"
+        }
+        
+        for finding in all_findings:
+            ai_category = finding.get('category', 'GENERAL')
+            mapped_category = category_mapping.get(ai_category, "Other Legal Issues")
+            categories[mapped_category].append(finding)
+        
+        # Remove empty categories
+        return {k: v for k, v in categories.items() if v}
+    
     
     def _get_page_info_for_finding(self, finding: Dict[str, Any]) -> str:
         """Get page information for a finding based on chunk data"""

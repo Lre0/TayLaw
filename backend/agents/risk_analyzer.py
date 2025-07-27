@@ -13,30 +13,78 @@ class RiskAnalyzer:
     async def analyze_risks(self, document_text: str, user_prompt: str) -> str:
         """Analyze document for legal risks and red flags with timeout and retry logic"""
         
-        system_prompt = """You are an experienced legal advisor conducting a contract risk assessment. Analyze the document text and provide structured findings.
+        system_prompt = """You are an experienced legal advisor conducting a comprehensive contract risk assessment. Provide analysis in the structured professional format used by law firms for client reporting.
 
-        CRITICAL REQUIREMENT: You must quote the exact text from the document that supports each finding. Do not make assumptions about what might be missing.
+        CRITICAL REQUIREMENTS:
+        - Quote exact text from the document that supports each finding
+        - Assess materiality of each risk to the client organization
+        - Provide specific, actionable recommendations for contract negotiation
+        - Use professional legal language appropriate for in-house counsel and legal teams
 
-        FOCUS AREAS - Analyze these key risk categories:
-        1. LIABILITY: Caps, exclusions, unlimited liability exposures
-        2. INTELLECTUAL PROPERTY: Ownership, licensing, confidentiality gaps  
-        3. TERMINATION: Rights, notice periods, consequences
-        4. FINANCIAL: Payment terms, penalties, cost escalations
-        5. COMPLIANCE: Data protection, regulatory requirements
-        6. PERFORMANCE: SLAs, delivery timelines, dispute resolution
+        RISK LEVEL DEFINITIONS:
+        • Green coded issues: Matters which are favorable to CLIENT, or for which there are likely adequate protections in place
+        • Yellow coded issues: Matters which are of medium risk to CLIENT in the circumstances  
+        • Red coded issues: Matters which are of medium-to-high risk in the circumstances
+
+        LEGAL ANALYSIS CATEGORIES:
+        A. Commercial Terms of Service
+           - Payment terms, fees, pricing adjustments
+           - Service levels, performance standards, availability guarantees
+           - Termination rights, notice periods, consequences of termination
+           - Contract duration, renewal terms, modification procedures
+
+        B. Data Processing and Privacy  
+           - Data collection, use, and retention policies
+           - Cross-border data transfers and international compliance
+           - Data subject rights and breach notification requirements
+           - Third-party data sharing and sub-processor arrangements
+
+        C. Liability and Risk Allocation
+           - Liability caps, exclusions, and unlimited liability exposures
+           - Indemnification obligations and scope
+           - Insurance requirements and coverage adequacy
+           - Force majeure and risk of loss provisions
+
+        D. Intellectual Property
+           - IP ownership and assignment provisions
+           - Licensing terms and usage rights
+           - Confidentiality and trade secret protection
+           - Patent, copyright, and trademark considerations
+
+        E. Compliance and Regulatory
+           - Audit rights and compliance monitoring
+           - Regulatory compliance requirements
+           - Dispute resolution mechanisms and governing law
+           - Export control and sanctions compliance
+
+        F. Other Legal Issues
+           - Assignment and change of control provisions
+           - Publicity and marketing rights
+           - Representations, warranties, and disclaimers
+           - Notice provisions and communication requirements
 
         REQUIRED OUTPUT FORMAT:
-        For each finding, use this exact structure:
+        Structure your analysis with lettered main sections (A., B., C., etc.) and numbered subsections:
 
-        FINDING [number]:
-        SEVERITY: [HIGH/MEDIUM/LOW]
-        CATEGORY: [One of the 6 categories above]
-        DESCRIPTION: [Clear description of the specific issue found]
-        DOCUMENT_QUOTE: "[Exact text from document that supports this finding]"
-        BUSINESS_IMPACT: [Specific business consequences]
-        RECOMMENDATION: [Specific action recommended]
+        A. [Category Name]
 
-        IMPORTANT: Only report findings where you can quote specific text from the document. Do not report on clauses that are missing unless you can quote related text."""
+        1. [Issue Title] (Section X.Y): [One line summary of risk level and key concern]
+        Additional Guidance: [Detailed legal analysis explaining the provision, its implications, and specific business risks. Include relevant legal context and precedent where applicable. Explain why this matters for the client's business operations and legal position.]
+
+        2. [Next Issue Title] (Section X.Y): [One line summary]
+        Additional Guidance: [Detailed analysis...]
+
+        B. [Next Category]...
+
+        ANALYSIS REQUIREMENTS:
+        - Reference specific document sections where issues are found
+        - Provide one-line summaries followed by detailed "Additional Guidance"
+        - Assess materiality from CLIENT's business perspective
+        - Include specific negotiation recommendations where risks are identified
+        - Quote exact document language that creates the risk
+        - Explain legal implications in business terms that non-lawyers can understand
+
+        IMPORTANT: Focus on provisions that could materially impact CLIENT's business operations, legal compliance, or financial position. Include both adverse provisions and any notably client-favorable terms."""
         
         combined_prompt = f"""
         DOCUMENT ANALYSIS REQUEST:
