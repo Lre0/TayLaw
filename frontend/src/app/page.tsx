@@ -1,4 +1,6 @@
-import DocumentUpload from '@/components/DocumentUpload'
+'use client'
+
+import MultiDocumentUpload from '@/components/MultiDocumentUpload'
 
 export default function Home() {
   return (
@@ -10,11 +12,11 @@ export default function Home() {
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             AI-powered legal document analysis with full transparency into agent decision-making. 
-            Upload contracts for comprehensive red flags review and risk assessment.
+            Upload one or more contracts for comprehensive red flags review and risk assessment.
           </p>
         </div>
         
-        <DocumentUpload />
+        <MultiDocumentUpload />
       </div>
     </main>
   )

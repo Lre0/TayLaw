@@ -161,3 +161,9 @@ We are building an AI-powered SaaS platform to streamline legal workflows for in
 - **Path Separators**: Use backslashes (\) not forward slashes (/) for file operations
 - **Shell Commands**: Prefer Windows native commands or cross-platform tools
 - **File Operations**: Use Windows-compatible file manipulation commands
+
+## File Organization Rules
+- **Debug Files**: All test, debug, and temporary files MUST be saved to the `debug\` folder
+- **Test Scripts**: Any .py files for testing, debugging, or experimentation go in `debug\`
+- **Temporary Files**: Log files, sample outputs, and temporary data files go in `debug\`
+- **Keep Root Clean**: Only production code, documentation, and essential config files in project root
