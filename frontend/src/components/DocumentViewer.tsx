@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { API_BASE_URL } from '../lib/config'
 
 interface DocumentViewerProps {
   file: File | null
@@ -29,7 +30,7 @@ export default function DocumentViewer({ file, isOpen, onClose }: DocumentViewer
         const formData = new FormData()
         formData.append('file', file)
 
-        const response = await fetch('http://localhost:8000/api/extract-text', {
+        const response = await fetch(`${API_BASE_URL}/api/extract-text`, {
           method: 'POST',
           body: formData,
         })

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import AgentMonitor from './AgentMonitor'
+import { API_BASE_URL } from '../lib/config'
 
 export default function DocumentUpload() {
   const [file, setFile] = useState<File | null>(null)
@@ -49,7 +50,7 @@ export default function DocumentUpload() {
         const formData = new FormData()
         formData.append('file', uploadedFile)
 
-        const response = await fetch('http://localhost:8000/api/extract-text', {
+        const response = await fetch(`${API_BASE_URL}/api/extract-text`, {
           method: 'POST',
           body: formData,
         })
@@ -90,7 +91,7 @@ export default function DocumentUpload() {
     formData.append('prompt', prompt)
 
     try {
-      const response = await fetch('http://localhost:8000/api/analyze', {
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: 'POST',
         body: formData,
       })

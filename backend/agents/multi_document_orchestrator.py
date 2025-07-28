@@ -107,13 +107,30 @@ class DocumentProcessingQueue:
         )
         
         # Start parallel processing with concurrency control
+        print(f"Creating {len(batch_job.documents)} processing tasks")
         tasks = []
-        for document_job in batch_job.documents:
+        for i, document_job in enumerate(batch_job.documents):
+            print(f"Creating task {i+1} for {document_job.filename}")
             task = self._process_single_document(document_job, batch_id)
             tasks.append(task)
         
         # Wait for all documents to complete
-        await asyncio.gather(*tasks, return_exceptions=True)
+        print("Starting parallel processing...")
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            print(f"Parallel processing completed. Results: {len(results)} items")
+            
+            # Check for exceptions in results
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    print(f"Task {i+1} failed with exception: {result}")
+                else:
+                    print(f"Task {i+1} completed successfully")
+        except Exception as gather_error:
+            print(f"asyncio.gather failed: {gather_error}")
+            import traceback
+            traceback.print_exc()
+            raise gather_error
         
         batch_job.completed_at = time.time()
         batch_job.completed_count = len([d for d in batch_job.documents if d.status == DocumentStatus.COMPLETED])
@@ -160,11 +177,19 @@ class DocumentProcessingQueue:
                 document_job.progress = 30.0
                 
                 # Process document using existing orchestrator
-                result = await self.orchestrator.process_document(
-                    file_content=document_job.file_content,
-                    filename=document_job.filename,
-                    prompt=document_job.prompt
-                )
+                print(f"Processing document: {document_job.filename}")
+                try:
+                    result = await self.orchestrator.process_document(
+                        file_content=document_job.file_content,
+                        filename=document_job.filename,
+                        prompt=document_job.prompt
+                    )
+                    print(f"Document processing successful for: {document_job.filename}")
+                except Exception as process_error:
+                    print(f"Document processing failed for {document_job.filename}: {process_error}")
+                    import traceback
+                    traceback.print_exc()
+                    raise process_error
                 
                 # Success
                 document_job.status = DocumentStatus.COMPLETED
@@ -254,10 +279,11 @@ class DocumentProcessingQueue:
         if unified:
             # Use cached unified analysis if available, otherwise generate it
             if batch_job.cached_unified_analysis is None:
-                print(f"DEBUG: Generating unified analysis for batch {batch_id} (first time)")
+                # DEBUG: Generating unified analysis for batch {batch_id} (first time)
                 batch_job.cached_unified_analysis = await self._create_unified_analysis(batch_job)
             else:
-                print(f"DEBUG: Using cached unified analysis for batch {batch_id}")
+                # DEBUG: Using cached unified analysis for batch {batch_id}
+                pass
                 
             base_result.update({
                 "analysis_type": "unified",
@@ -284,7 +310,7 @@ class DocumentProcessingQueue:
     
     async def _create_unified_analysis(self, batch_job: BatchJob) -> str:
         """Combine individual document analyses into a unified red flags report"""
-        print(f"DEBUG: Creating unified analysis for batch {batch_job.batch_id} - SHOULD ONLY HAPPEN ONCE")
+        # DEBUG: Creating unified analysis for batch {batch_job.batch_id} - SHOULD ONLY HAPPEN ONCE
         completed_docs = [doc for doc in batch_job.documents if doc.status == DocumentStatus.COMPLETED and doc.result]
         
         if not completed_docs:
@@ -338,23 +364,24 @@ This unified analysis consolidates findings from all {len(completed_docs)} docum
                         'filename': doc.filename,
                         'error': doc.result
                     })
-                    print(f"Error result for {doc.filename}: {doc.result[:100]}...")
+                    # Error result for {doc.filename}: {doc.result[:100]}...
                 else:
                     all_analyses.append({
                         'filename': doc.filename,
                         'content': doc.result
                     })
-                    print(f"Analysis received for {doc.filename}: {len(doc.result)} characters")
+                    # Analysis received for {doc.filename}: {len(doc.result)} characters
             else:
-                print(f"No result for {doc.filename}")
+                # No result for {doc.filename}
+                pass
         
         # If we have error analyses, skip API consolidation and go straight to fallback
         if error_analyses:
-            print(f"Found {len(error_analyses)} error analyses, using fallback consolidation")
+            # Found {len(error_analyses)} error analyses, using fallback consolidation
             return self._simple_consolidation_fallback(completed_docs)
         
         if not all_analyses:
-            print("No analyses found - returning fallback message")
+            # No analyses found - returning fallback message
             return "No issues identified in the analyzed documents."
         
         # Use RiskAnalyzer to consolidate findings into unified format
@@ -367,7 +394,7 @@ This unified analysis consolidates findings from all {len(completed_docs)} docum
                 for analysis in all_analyses
             ])
             
-            consolidation_prompt = f"""You are a legal analysis consolidation expert. Your task is to take multiple individual document red flags analyses and create a single, unified list of key issues.
+            consolidation_prompt = f"""You are a legal analysis consolidation expert. Your task is to take multiple individual document red flags analyses and create a single, unified list of key issues with detailed section references and actionable guidance.
 
 INDIVIDUAL ANALYSES:
 {analyses_text}
@@ -377,45 +404,64 @@ CONSOLIDATION INSTRUCTIONS:
 2. Extract the key red flags and issues from each document
 3. Organize findings by document first, then by risk level within each document
 4. For each document, categorize issues as: Critical, High Risk, Moderate Risk, Low Risk
-5. Present each issue as a clear, standalone legal concern
-6. Focus on actionable legal risks and concerns
+5. Present each issue with specific section/clause references when available
+6. Include actionable commentary and guidance for each issue
+7. Focus on actionable legal risks and concerns
 
 FORMAT YOUR RESPONSE EXACTLY AS:
 
 ## [Document 1 Name]
 
 ### Critical Issues
-• [Issue description]
-• [Next issue if any]
+• **[Issue Title]** (Section: [clause/section reference if available])
+  - **Finding**: [Detailed description of the issue]
+  - **Risk**: [Explanation of the legal risk or concern]
+  - **Recommendation**: [Specific action or consideration for addressing this issue]
+
+• **[Next issue title if any]** (Section: [clause reference])
+  - **Finding**: [Description]
+  - **Risk**: [Risk explanation]
+  - **Recommendation**: [Action guidance]
 
 ### High Risk Issues  
-• [Issue description]
-• [Next issue if any]
+• **[Issue Title]** (Section: [clause/section reference if available])
+  - **Finding**: [Detailed description of the issue]
+  - **Risk**: [Explanation of the legal risk or concern] 
+  - **Recommendation**: [Specific action or consideration for addressing this issue]
 
 ### Moderate Risk Issues
-• [Issue description]
-• [Next issue if any]
+• **[Issue Title]** (Section: [clause/section reference if available])
+  - **Finding**: [Detailed description of the issue]
+  - **Risk**: [Explanation of the legal risk or concern]
+  - **Recommendation**: [Specific action or consideration for addressing this issue]
 
 ### Low Risk Issues
-• [Issue description]
-• [Next issue if any]
+• **[Issue Title]** (Section: [clause/section reference if available])
+  - **Finding**: [Detailed description of the issue]
+  - **Risk**: [Explanation of the legal risk or concern]
+  - **Recommendation**: [Specific action or consideration for addressing this issue]
 
 ## [Document 2 Name]
 
 ### Critical Issues
-• [Issue description]
-
-### High Risk Issues  
-• [Issue description]
+• **[Issue Title]** (Section: [clause reference])
+  - **Finding**: [Description]
+  - **Risk**: [Risk explanation]  
+  - **Recommendation**: [Action guidance]
 
 [Continue for all documents...]
 
-If a document has no issues in a risk category, omit that section for that document. If a document has no significant issues at all, state "No significant red flags identified in this document."
+IMPORTANT FORMATTING NOTES:
+- Always include section/clause references when they can be identified from the source analysis
+- If no section reference is available, use "(Section: Not specified)" 
+- Each issue should have Finding, Risk, and Recommendation subsections
+- If a document has no issues in a risk category, omit that section for that document
+- If a document has no significant issues at all, state "No significant red flags identified in this document."
 """
 
             # Get consolidation using existing RiskAnalyzer
             risk_analyzer = RiskAnalyzer()
-            print(f"Consolidating {len(all_analyses)} analyses...")
+            # Consolidating {len(all_analyses)} analyses...
             
             # Log consolidation start
             from .agent_monitor import agent_monitor, AgentStatus, LogLevel
@@ -436,7 +482,7 @@ If a document has no issues in a risk category, omit that section for that docum
                 LogLevel.SUCCESS
             )
             
-            print(f"Consolidation complete: {len(consolidated_result)} characters")
+            # Consolidation complete: {len(consolidated_result)} characters
             
             return consolidated_result
             
@@ -444,7 +490,7 @@ If a document has no issues in a risk category, omit that section for that docum
             print(f"Consolidation failed: {e}")
             # Fallback to simple consolidation if API fails
             fallback_result = self._simple_consolidation_fallback(completed_docs)
-            print(f"Using fallback consolidation")
+            # Using fallback consolidation
             return fallback_result
 
     def _simple_consolidation_fallback(self, completed_docs: List[DocumentJob]) -> str:
@@ -504,7 +550,12 @@ class MultiDocumentOrchestrator:
     
     async def analyze_multiple_documents(self, files_data: List[Dict[str, Any]], prompt: str, unified: bool = True) -> Dict[str, Any]:
         """Analyze multiple documents with full orchestration"""
+        print(f"MultiDocumentOrchestrator: Starting analysis of {len(files_data)} documents")
         start_time = time.time()
+        
+        # Clear previous workflow history  
+        print("Clearing agent monitor history")
+        agent_monitor.clear_history()
         
         await agent_monitor.log_activity(
             "Multi-Document Orchestrator",
@@ -516,15 +567,21 @@ class MultiDocumentOrchestrator:
         
         try:
             # Create batch
+            print("Creating batch...")
             batch_id = await self.queue.create_batch(files_data, prompt)
+            print(f"Batch created with ID: {batch_id}")
             self.active_batches[batch_id] = "processing"
             
             # Process batch
+            print("Processing batch...")
             batch_job = await self.queue.process_batch(batch_id)
+            print("Batch processing completed")
             self.active_batches[batch_id] = "completed"
             
             # Generate results with unified analysis by default
+            print("Generating results...")
             results = await self.queue.get_batch_results(batch_id, unified=unified)
+            print("Results generated successfully")
             
             total_time = time.time() - start_time
             

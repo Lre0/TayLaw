@@ -1,6 +1,7 @@
-from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
 import json
 import io
@@ -17,13 +18,20 @@ load_dotenv()
 
 app = FastAPI(title="Legal AI Assistant API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Custom CORS middleware to ensure headers are added
+class CustomCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Add CORS headers to all responses
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Expose-Headers"] = "*"
+        
+        return response
+
+app.add_middleware(CustomCORSMiddleware)
 
 # Use LangGraph orchestrator for enhanced workflow management
 langgraph_orchestrator = LangGraphOrchestrator()
@@ -33,6 +41,16 @@ fallback_orchestrator = Orchestrator()
 @app.get("/")
 async def root():
     return {"message": "Legal AI Assistant API"}
+
+@app.get("/test-cors")
+async def test_cors():
+    """Test endpoint to verify CORS headers"""
+    return {"message": "CORS test", "timestamp": "2025-07-28"}
+
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Handle CORS preflight requests"""
+    return {"message": "OK"}
 
 @app.post("/api/analyze")
 async def analyze_document(
@@ -44,7 +62,7 @@ async def analyze_document(
         
         # Ensure filename is not None
         filename = file.filename or "document.txt"
-        print(f"Processing file: {filename} ({len(file_content)} bytes)")
+        # Processing file: {filename} ({len(file_content)} bytes)
         
         # Use LangGraph orchestrator for enhanced agent visibility
         result = await langgraph_orchestrator.process_document(
@@ -119,6 +137,9 @@ async def analyze_multiple_documents(
     prompt: str = Form(...)
 ):
     """Analyze multiple documents using the multi-document orchestrator"""
+    print("=== ANALYZE MULTIPLE ENDPOINT HIT ===")
+    print(f"Received {len(files)} files")
+    print(f"Prompt length: {len(prompt)}")
     try:
         if len(files) > 10:  # Security limit
             return JSONResponse(
@@ -137,7 +158,7 @@ async def analyze_multiple_documents(
                         content={"error": f"File type {file_ext} not allowed. Supported: PDF, Word, Text"}
                     )
         
-        print(f"Processing batch with {len(files)} documents")
+        # Processing batch with {len(files)} documents
         
         # Prepare files data for multi-document orchestrator
         files_data = []
@@ -158,9 +179,20 @@ async def analyze_multiple_documents(
             })
         
         # Use multi-document orchestrator for enhanced parallel processing
-        result = await multi_document_orchestrator.analyze_multiple_documents(files_data, prompt)
-        
-        return JSONResponse(content=result)
+        print(f"Starting analysis with {len(files_data)} documents")
+        try:
+            result = await multi_document_orchestrator.analyze_multiple_documents(files_data, prompt)
+            print(f"Analysis completed successfully")
+            return JSONResponse(content=result)
+        except Exception as analysis_error:
+            print(f"Analysis failed: {analysis_error}")
+            import traceback
+            traceback.print_exc()
+            # Return error instead of re-raising to prevent server crash
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Analysis failed: {str(analysis_error)}"}
+            )
     
     except Exception as e:
         return JSONResponse(
@@ -260,19 +292,19 @@ async def get_batch_status(batch_id: str):
 @app.get("/api/batch-results/{batch_id}")
 async def get_batch_results(batch_id: str, unified: bool = True):
     """Get the final results of a completed batch"""
-    print(f"🔄 API call to batch-results for batch {batch_id}")
+    # API call to batch-results for batch {batch_id}
     try:
         results = await multi_document_orchestrator.queue.get_batch_results(batch_id, unified=unified)
         if results is None:
-            print(f"❌ Batch {batch_id} not found")
+            # Batch {batch_id} not found
             return JSONResponse(
                 status_code=404,
                 content={"error": f"Batch {batch_id} not found"}
             )
-        print(f"✅ Returning results for batch {batch_id}")
+        # Returning results for batch {batch_id}
         return JSONResponse(content=results)
     except Exception as e:
-        print(f"💥 Error getting batch results: {e}")
+        print(f"Error getting batch results: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
@@ -309,4 +341,4 @@ async def compare_batch_documents(batch_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False, log_level="warning")

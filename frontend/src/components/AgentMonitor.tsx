@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { API_BASE_URL } from '../lib/config'
 
 interface ChunkStatus {
   chunk_index: number
@@ -81,8 +82,8 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
       try {
         // Fetch both activity history and current status for parallel processing info
         const [historyResponse, statusResponse] = await Promise.all([
-          fetch('http://localhost:8000/api/agent-history?limit=20'),
-          fetch('http://localhost:8000/api/agent-status')
+          fetch(`${API_BASE_URL}/api/agent-history?limit=20`, { headers: { 'ngrok-skip-browser-warning': 'true' } }),
+          fetch(`${API_BASE_URL}/api/agent-status`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
         ])
         
         if (historyResponse.ok && statusResponse.ok) {
@@ -114,25 +115,28 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
       { text: 'Document split into chunks', agent: 'Document Chunking Agent', icon: '✂️' },
       { text: 'Parallel risk analysis completed', agent: 'Orchestrator Agent', icon: '🔍' },
       { text: 'Cross-reference validation done', agent: 'Cross-Reference Agent', icon: '🔗' },
-      { text: 'Analysis consolidated across documents', agent: 'Analysis Consolidation Agent', icon: '🔄' },
-      { text: 'Results combined and report generated', agent: 'Report Generator', icon: '📊' }
+      { text: 'Results combined and report generated', agent: 'Report Generator', icon: '📊' },
+      { text: 'Analysis consolidated across documents', agent: 'Analysis Consolidation Agent', icon: '🔄' }
     ]
 
     return keyMilestones.map(milestone => {
       const agentStatus = agentStates[milestone.agent] || 'idle'
-      const isCompleted = agentStatus === 'completed'
-      const isProcessing = agentStatus === 'processing'
       
-      // Find the completion activity for this agent (when status changed to completed)
+      // Find all activities for this agent
       const agentActivities = activities.filter(a => a.agent_name === milestone.agent)
-      const completionActivity = agentActivities.find(a => a.status === 'completed') || agentActivities[agentActivities.length - 1]
+      const completionActivity = agentActivities.find(a => a.status === 'completed')
+      const processingActivity = agentActivities.find(a => a.status === 'processing')
+      
+      // Base completion only on actual activity log, not agent state
+      const hasCompleted = !!completionActivity
+      const isCurrentlyProcessing = !hasCompleted && (!!processingActivity || agentStatus === 'processing')
       
       return {
         ...milestone,
-        completed: isCompleted,
-        processing: isProcessing,
-        time: isCompleted && completionActivity ? new Date(completionActivity.timestamp).toLocaleTimeString() : null,
-        icon: isCompleted ? '✅' : isProcessing ? '🔄' : milestone.icon
+        completed: hasCompleted,
+        processing: isCurrentlyProcessing,
+        time: completionActivity ? new Date(completionActivity.timestamp).toLocaleTimeString() : null,
+        icon: hasCompleted ? '✅' : isCurrentlyProcessing ? '🔄' : milestone.icon
       }
     })
   }

@@ -31,10 +31,11 @@ class DocumentProcessor:
             from .enhanced_pdf_processor import extract_pdf_enhanced
             result = await extract_pdf_enhanced(file_content, "document.pdf")
             if result and len(result.strip()) > 100 and not result.startswith("Error:"):
-                print(f"Enhanced PDF processor successful: {len(result)} chars")
+                # Enhanced PDF processor successful: {len(result)} chars
                 return result
         except Exception as e:
-            print(f"Enhanced PDF processor failed: {e}")
+            # Enhanced PDF processor failed: {e}
+            pass
         
         # Method 2: PyMuPDF with enhanced formatting preservation (fallback)
         try:
@@ -55,11 +56,12 @@ class DocumentProcessor:
             
             if text_parts:
                 result = '\n\n'.join(text_parts)
-                print(f"Enhanced PDF extraction successful: {len(result)} chars")
+                # Enhanced PDF extraction successful: {len(result)} chars
                 return result
                 
         except Exception as e:
-            print(f"Enhanced PyMuPDF failed: {e}")
+            # Enhanced PyMuPDF failed: {e}
+            pass
         
         # Method 3: pdfplumber with layout preservation
         try:

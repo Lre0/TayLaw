@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { API_BASE_URL } from '../lib/config'
 
 interface DocumentFile {
   id: string
@@ -77,7 +78,7 @@ export default function DocumentTabs({
         const formData = new FormData()
         formData.append('file', doc.file)
 
-        const response = await fetch('http://localhost:8000/api/extract-text', {
+        const response = await fetch(`${API_BASE_URL}/api/extract-text`, {
           method: 'POST',
           body: formData,
         })
