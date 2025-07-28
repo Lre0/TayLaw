@@ -258,10 +258,10 @@ async def get_batch_status(batch_id: str):
         )
 
 @app.get("/api/batch-results/{batch_id}")
-async def get_batch_results(batch_id: str):
+async def get_batch_results(batch_id: str, unified: bool = True):
     """Get the final results of a completed batch"""
     try:
-        results = multi_document_orchestrator.queue.get_batch_results(batch_id)
+        results = multi_document_orchestrator.queue.get_batch_results(batch_id, unified=unified)
         if results is None:
             return JSONResponse(
                 status_code=404,

@@ -236,29 +236,95 @@ class DocumentProcessingQueue:
             ]
         }
     
-    def get_batch_results(self, batch_id: str) -> Optional[Dict[str, Any]]:
+    def get_batch_results(self, batch_id: str, unified: bool = True) -> Optional[Dict[str, Any]]:
         """Get final results of a completed batch"""
         batch_job = self.batch_jobs.get(batch_id)
         if not batch_job:
             return None
         
-        return {
+        base_result = {
             "batch_id": batch_id,
             "total_documents": batch_job.total_documents,
             "completed": batch_job.completed_count,
             "failed": batch_job.failed_count,
             "processing_time": (batch_job.completed_at - batch_job.started_at) if batch_job.completed_at else None,
-            "results": [
-                {
-                    "filename": doc.filename,
-                    "status": "completed" if doc.status == DocumentStatus.COMPLETED else "failed",
-                    "analysis": doc.result,
-                    "error": doc.error,
-                    "processing_time": (doc.completed_at - doc.started_at) if doc.completed_at and doc.started_at else None
-                }
-                for doc in batch_job.documents
-            ]
         }
+        
+        if unified:
+            # Return unified analysis combining all documents
+            unified_analysis = self._create_unified_analysis(batch_job)
+            base_result.update({
+                "analysis_type": "unified",
+                "unified_analysis": unified_analysis,
+                "source_documents": [doc.filename for doc in batch_job.documents if doc.status == DocumentStatus.COMPLETED]
+            })
+        else:
+            # Return individual results for each document
+            base_result.update({
+                "analysis_type": "individual",
+                "results": [
+                    {
+                        "filename": doc.filename,
+                        "status": "completed" if doc.status == DocumentStatus.COMPLETED else "failed",
+                        "analysis": doc.result,
+                        "error": doc.error,
+                        "processing_time": (doc.completed_at - doc.started_at) if doc.completed_at and doc.started_at else None
+                    }
+                    for doc in batch_job.documents
+                ]
+            })
+        
+        return base_result
+    
+    def _create_unified_analysis(self, batch_job: BatchJob) -> str:
+        """Combine individual document analyses into a unified red flags report"""
+        completed_docs = [doc for doc in batch_job.documents if doc.status == DocumentStatus.COMPLETED and doc.result]
+        
+        if not completed_docs:
+            return "No documents were successfully analyzed."
+        
+        # Collect all red flags and findings from individual analyses
+        all_red_flags = []
+        document_summaries = []
+        
+        for doc in completed_docs:
+            analysis = doc.result
+            if analysis:
+                # Extract red flags and important findings from each document's analysis
+                document_summaries.append(f"**{doc.filename}**: Analyzed successfully")
+                
+                # Add the analysis content with document identification
+                all_red_flags.append(f"\n### Analysis from {doc.filename}\n{analysis}")
+        
+        # Create unified analysis report
+        unified_report = f"""# Unified Red Flags Analysis Report
+
+## Executive Summary
+Multi-document analysis completed for {len(completed_docs)} document(s):
+{chr(10).join(f"• {doc.filename}" for doc in completed_docs)}
+
+## Processing Summary
+- **Total Documents**: {batch_job.total_documents}
+- **Successfully Analyzed**: {batch_job.completed_count}
+- **Failed**: {batch_job.failed_count}
+- **Processing Time**: {(batch_job.completed_at - batch_job.started_at):.2f} seconds
+
+## Comprehensive Red Flags Analysis
+The following analysis combines red flags and risk assessments from all documents:
+
+{"".join(all_red_flags)}
+
+## Overall Risk Assessment
+This report consolidates findings from {len(completed_docs)} document(s). Each document's specific findings are included above with clear document identification. Review each section carefully for document-specific risks and considerations.
+
+## Next Steps
+1. Review each document-specific analysis above
+2. Prioritize high-risk findings across all documents
+3. Consider cumulative risk exposure across the document set
+4. Address critical issues identified in any of the analyzed documents
+"""
+        
+        return unified_report
 
 class MultiDocumentOrchestrator:
     """High-level orchestrator for multi-document analysis workflows"""
@@ -267,16 +333,16 @@ class MultiDocumentOrchestrator:
         self.queue = DocumentProcessingQueue(max_concurrent_documents)
         self.active_batches: Dict[str, str] = {}  # batch_id -> status
     
-    async def analyze_multiple_documents(self, files_data: List[Dict[str, Any]], prompt: str) -> Dict[str, Any]:
+    async def analyze_multiple_documents(self, files_data: List[Dict[str, Any]], prompt: str, unified: bool = True) -> Dict[str, Any]:
         """Analyze multiple documents with full orchestration"""
         start_time = time.time()
         
         await agent_monitor.log_activity(
             "Multi-Document Orchestrator",
             AgentStatus.PROCESSING,
-            f"Starting multi-document analysis workflow for {len(files_data)} documents",
+            f"Starting multi-document analysis workflow for {len(files_data)} documents (unified={unified})",
             LogLevel.INFO,
-            metadata={"document_count": len(files_data)}
+            metadata={"document_count": len(files_data), "unified_analysis": unified}
         )
         
         try:
@@ -288,21 +354,22 @@ class MultiDocumentOrchestrator:
             batch_job = await self.queue.process_batch(batch_id)
             self.active_batches[batch_id] = "completed"
             
-            # Generate results
-            results = self.queue.get_batch_results(batch_id)
+            # Generate results with unified analysis by default
+            results = self.queue.get_batch_results(batch_id, unified=unified)
             
             total_time = time.time() - start_time
             
             await agent_monitor.log_activity(
                 "Multi-Document Orchestrator",
                 AgentStatus.COMPLETED,
-                f"Multi-document analysis completed in {total_time:.2f}s",
+                f"Multi-document analysis completed in {total_time:.2f}s with {'unified' if unified else 'individual'} results",
                 LogLevel.SUCCESS,
                 metadata={
                     "batch_id": batch_id,
                     "total_time": total_time,
                     "documents_processed": len(files_data),
-                    "success_rate": f"{batch_job.completed_count}/{batch_job.total_documents}"
+                    "success_rate": f"{batch_job.completed_count}/{batch_job.total_documents}",
+                    "analysis_type": "unified" if unified else "individual"
                 }
             )
             

@@ -19,7 +19,17 @@ To democratize AI-powered legal assistance by providing smaller legal teams with
 **User Story**: As a legal professional, I want to upload a contract and receive an automated analysis of potential risks and compliance issues with full visibility into how the AI reached its conclusions.
 
 **Functional Requirements**:
-- **Document Upload**: Support PDF, Word, and text file formats up to 100 pages
+- **Document Upload**: 
+  - Support PDF, Word, and text file formats up to 100 pages
+  - Single or multiple files per upload session
+  - Support for batch processing of multiple documents
+- **User Context Input**: 
+  - Free text input box for additional business context
+  - Context combines with predefined prompts for analysis
+- **Prompt Selection**:
+  - List of predefined prompts including "Red Flags Review"
+  - Prompts stored and version controlled in the system
+  - User can select from predefined templates or create custom prompts
 - **Risk Analysis Processing**: AI identifies potential legal risks, compliance issues, and problematic clauses
 - **Agent Transparency**: Real-time visibility into what each AI agent is doing during analysis
 - **Interactive Results Interface**: 
@@ -28,6 +38,8 @@ To democratize AI-powered legal assistance by providing smaller legal teams with
   - Click to highlight corresponding document sections
   - Ability to accept/reject individual findings
   - Add custom notes to specific issues
+  - **Scrollable Issues List**: Each issue links to and highlights the relevant clause in the document viewer panel
+  - **Document Reference Navigation**: Clickable document references in analysis that switch to relevant document tabs
 - **Final Report Generation**: Compile selected issues into formatted legal report
 
 **Agent Workflow Visibility**:
@@ -39,11 +51,15 @@ To democratize AI-powered legal assistance by providing smaller legal teams with
 
 **Technical Requirements**:
 - Process documents up to 100 pages within 2 minutes using parallel chunk analysis
+- **Fast Processing**: Standard documents analyzed within 30 seconds
 - Consistent results for identical document inputs (95% reliability target)
 - Real-time parallel processing monitoring displayed in user interface
 - Intelligent chunking that preserves legal context and clause boundaries
 - Cross-reference validation between different document sections
 - Error recovery with clear explanations when individual chunks fail processing
+- **Responsive Web UI**: Support for document upload and display across devices
+- **Secure Document Handling**: Data privacy compliance and secure document processing
+- **Prompt Management System**: Store, retrieve, and version control predefined analysis prompts accurately
 
 **Success Criteria**:
 - 90% accuracy in identifying high-risk clauses (lawyer-validated)
@@ -238,11 +254,19 @@ Recent Activity:
 
 #### Red Flags Review (MVP)
 - [ ] Users can upload legal documents in multiple formats
+- [ ] **User Context Input**: Users can input additional business context without errors
+- [ ] **Prompt Selection**: Users can select "Red Flags Review" from predefined prompts
+- [ ] **Predefined Prompt System**: "Red Flags Review" prompt stored and version controlled in system
+- [ ] **AI Processing Integration**: System combines user context with predefined Red Flags Review prompt
+- [ ] **Document Text Analysis**: AI analyzes document text for potential issues or flagged risks
 - [ ] Real-time agent activity visible throughout processing
 - [ ] Side-by-side interface allows issue selection and customization
+- [ ] **Scrollable Issues List**: Generated scrollable list of issues found
+- [ ] **Document Linking**: Each issue links to and highlights the relevant clause in document viewer panel on left
+- [ ] **Correct Clause Reference**: Issues list references correct clauses in documents
 - [ ] Final reports generate in professional format
 - [ ] 90% accuracy rate validated by legal expert
-- [ ] Processing completes within 2-minute target
+- [ ] Processing completes within 2-minute target (or 30 seconds for standard documents)
 
 #### System Transparency
 - [ ] 100% of agent decisions visible to users

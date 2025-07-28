@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import AgentMonitor from './AgentMonitor'
+import DocumentTabs from './DocumentTabs'
+import AnalysisResults from './AnalysisResults'
+import ScrollableIssuesList from './ScrollableIssuesList'
 
 interface DocumentFile {
   id: string
@@ -18,7 +21,12 @@ interface BatchResult {
   total_documents: number
   completed: number
   failed: number
-  results: Array<{
+  analysis_type: 'unified' | 'individual'
+  // For unified analysis
+  unified_analysis?: string
+  source_documents?: string[]
+  // For individual analysis (fallback)
+  results?: Array<{
     filename: string
     status: 'completed' | 'failed'
     analysis?: string
@@ -26,14 +34,106 @@ interface BatchResult {
   }>
 }
 
+interface PredefinedPrompt {
+  id: string
+  name: string
+  description: string
+  template: string
+  version: string
+}
+
 export default function MultiDocumentUpload() {
   const [documents, setDocuments] = useState<DocumentFile[]>([])
-  const [prompt, setPrompt] = useState('Please perform a comprehensive red flags review on this contract, identifying potential legal risks, compliance issues, and problematic clauses.')
+  const [selectedPromptId, setSelectedPromptId] = useState('red-flags-review')
+  const [customPrompt, setCustomPrompt] = useState('')
+  const [userContext, setUserContext] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null)
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [realTimeProgress, setRealTimeProgress] = useState<Record<string, number>>({})
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null)
+  const [layoutMode, setLayoutMode] = useState<'split' | 'docs-full' | 'analysis-full'>('split')
+  const [highlightClause, setHighlightClause] = useState<string | null>(null)
+  const [showIssuesList, setShowIssuesList] = useState(false)
+
+  // Predefined prompts with version control - Core TayLaw Use Cases
+  const predefinedPrompts: PredefinedPrompt[] = [
+    {
+      id: 'red-flags-review',
+      name: 'Red Flags Review',
+      description: 'Automated contract risk assessment and compliance issue identification with evidence-based findings',
+      template: 'Please perform a comprehensive red flags review on this contract, identifying potential legal risks, compliance issues, and problematic clauses. Focus on liability limitations, termination conditions, payment terms, intellectual property clauses, indemnification provisions, and any unusual or potentially problematic terms. Provide specific evidence from the contract text for each identified risk.',
+      version: '1.0'
+    },
+    {
+      id: 'review-against-base',
+      name: 'Review Against Base & Summarize Changes',
+      description: 'Compare contract versions and highlight modifications with impact analysis',
+      template: 'Compare this contract against standard templates or previous versions to identify all changes and modifications. Highlight additions, deletions, and alterations. Assess the business impact and legal risk of each change. Summarize departures from standard terms and flag any modifications that require special attention during review.',
+      version: '1.0'
+    },
+    {
+      id: 'negotiation-support',
+      name: 'Negotiation Support',
+      description: 'Help draft responses, track departures from standard terms, and analyze negotiation positions',
+      template: 'Analyze this contract for negotiation support. Identify unfavorable terms, track departures from standard positions, and suggest negotiation strategies. Highlight key terms that should be challenged, modified, or accepted. Provide recommendations for response drafting and position strength assessment on critical clauses.',
+      version: '1.0'
+    },
+    {
+      id: 'custom',
+      name: 'Custom Analysis',
+      description: 'Create your own analysis instructions for specialized use cases',
+      template: '',
+      version: '1.0'
+    }
+  ]
+
+  // Get the final prompt combining predefined template with user context
+  const getFinalPrompt = () => {
+    const selectedPrompt = predefinedPrompts.find(p => p.id === selectedPromptId)
+    const basePrompt = selectedPromptId === 'custom' ? customPrompt : selectedPrompt?.template || ''
+    
+    if (userContext.trim()) {
+      return `${basePrompt}\n\nAdditional Context: ${userContext}`
+    }
+    return basePrompt
+  }
+
+  const handleDocumentReference = useCallback((documentId: string) => {
+    setActiveDocumentId(documentId)
+    // Auto-switch to split view if currently in analysis-full mode
+    if (layoutMode === 'analysis-full') {
+      setLayoutMode('split')
+    }
+  }, [layoutMode])
+
+  const handleClauseClick = useCallback((documentId: string, clause: string, lineNumber?: number) => {
+    setActiveDocumentId(documentId)
+    setHighlightClause(clause)
+    // Auto-switch to split view to show both document and analysis
+    if (layoutMode === 'analysis-full') {
+      setLayoutMode('split')
+    }
+    // Clear highlight after a few seconds
+    setTimeout(() => setHighlightClause(null), 5000)
+  }, [layoutMode])
+
+  // Auto-select first document when documents change
+  const handleDocumentSelection = useCallback(() => {
+    if (documents.length > 0 && !activeDocumentId) {
+      setActiveDocumentId(documents[0].id)
+    }
+    // Reset to split mode for single documents
+    if (documents.length === 1 && layoutMode !== 'split') {
+      setLayoutMode('split')
+    }
+  }, [documents, activeDocumentId, layoutMode])
+
+  // Effect to handle document selection
+  React.useEffect(() => {
+    handleDocumentSelection()
+  }, [handleDocumentSelection])
 
   // Drag and drop handler
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -114,16 +214,10 @@ export default function MultiDocumentUpload() {
     return false
   }
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
 
   const handleSubmit = async () => {
-    if (documents.length === 0 || !prompt) return
+    const finalPrompt = getFinalPrompt()
+    if (documents.length === 0 || !finalPrompt.trim()) return
 
     setIsProcessing(true)
     setBatchResult(null)
@@ -134,7 +228,7 @@ export default function MultiDocumentUpload() {
     try {
       const formData = new FormData()
       documents.forEach(doc => formData.append('files', doc.file))
-      formData.append('prompt', prompt)
+      formData.append('prompt', finalPrompt)
 
       // Update to analyzing status
       setDocuments(prev => prev.map(doc => ({ ...doc, status: 'analyzing' as const, progress: 30 })))
@@ -176,19 +270,30 @@ export default function MultiDocumentUpload() {
         setBatchResult(result)
         
         // Update document statuses based on results
-        setDocuments(prev => prev.map(doc => {
-          const analysis = result.results.find(r => r.filename === doc.file.name)
-          if (analysis) {
-            return {
-              ...doc,
-              status: analysis.status === 'completed' ? 'completed' : 'failed',
-              analysis: analysis.analysis,
-              error: analysis.error,
-              progress: 100
+        if (result.analysis_type === 'individual' && result.results) {
+          // Handle individual results
+          setDocuments(prev => prev.map(doc => {
+            const analysis = result.results!.find(r => r.filename === doc.file.name)
+            if (analysis) {
+              return {
+                ...doc,
+                status: analysis.status === 'completed' ? 'completed' : 'failed',
+                analysis: analysis.analysis,
+                error: analysis.error,
+                progress: 100
+              }
             }
-          }
-          return { ...doc, status: 'failed' as const, error: 'No result found', progress: 100 }
-        }))
+            return { ...doc, status: 'failed' as const, error: 'No result found', progress: 100 }
+          }))
+        } else {
+          // For unified analysis, mark all documents as completed
+          setDocuments(prev => prev.map(doc => ({
+            ...doc,
+            status: 'completed' as const,
+            analysis: 'See unified analysis below',
+            progress: 100
+          })))
+        }
         
         setIsProcessing(false)
       }
@@ -230,7 +335,24 @@ export default function MultiDocumentUpload() {
   const downloadBatchReport = () => {
     if (!batchResult) return
 
-    const reportContent = `BATCH ANALYSIS REPORT
+    let reportContent = ''
+    
+    if (batchResult.analysis_type === 'unified') {
+      // Handle unified analysis
+      reportContent = `UNIFIED ANALYSIS REPORT
+========================
+
+Batch ID: ${batchResult.batch_id}
+Total Documents: ${batchResult.total_documents}
+Completed Successfully: ${batchResult.completed}
+Failed: ${batchResult.failed}
+Source Documents: ${batchResult.source_documents?.join(', ') || 'N/A'}
+
+${batchResult.unified_analysis}
+`
+    } else {
+      // Handle individual results (fallback)
+      reportContent = `BATCH ANALYSIS REPORT
 ======================
 
 Batch ID: ${batchResult.batch_id}
@@ -239,26 +361,27 @@ Completed Successfully: ${batchResult.completed}
 Failed: ${batchResult.failed}
 
 INDIVIDUAL DOCUMENT ANALYSES:
-${batchResult.results.map((result, index) => `
+${batchResult.results?.map((result, index) => `
 ${index + 1}. ${result.filename}
 Status: ${result.status.toUpperCase()}
 ${result.status === 'completed' ? result.analysis : `Error: ${result.error}`}
 
 ${'='.repeat(80)}
-`).join('')}
+`).join('') || 'No results available'}
 `
+    }
 
     const blob = new Blob([reportContent], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `batch_analysis_report_${batchResult.batch_id.slice(0, 8)}.txt`
+    a.download = `analysis_report_${batchResult.batch_id.slice(0, 8)}.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
+    <div className="max-w-[95vw] mx-auto px-4 py-6">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Legal Document Analysis</h1>
@@ -291,29 +414,110 @@ ${'='.repeat(80)}
           )}
         </div>
 
-        {/* Analysis Instructions */}
-        <div className="mt-6">
-          <label htmlFor="prompt" className="block text-sm font-medium text-gray-700 mb-2">
-            Analysis Instructions
-          </label>
-          <textarea
-            id="prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            rows={3}
-            placeholder="Specify what type of analysis you want performed on all documents..."
-          />
+        {/* Analysis Configuration */}
+        <div className="mt-6 space-y-6">
+          {/* Predefined Prompt Selection */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Analysis Type
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {predefinedPrompts.map((promptOption) => (
+                <div
+                  key={promptOption.id}
+                  onClick={() => setSelectedPromptId(promptOption.id)}
+                  className={`cursor-pointer p-4 border-2 rounded-lg transition-all ${
+                    selectedPromptId === promptOption.id
+                      ? 'border-blue-500 bg-blue-50 shadow-md'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5 ${
+                      selectedPromptId === promptOption.id
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-gray-300'
+                    }`}>
+                      {selectedPromptId === promptOption.id && (
+                        <div className="w-2 h-2 bg-white rounded-full m-0.5"></div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">
+                        {promptOption.name}
+                      </h4>
+                      <p className="text-xs text-gray-600 leading-relaxed">
+                        {promptOption.description}
+                      </p>
+                      <div className="mt-2 text-xs text-gray-400">
+                        v{promptOption.version}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom Prompt Input (only shown when custom is selected) */}
+          {selectedPromptId === 'custom' && (
+            <div>
+              <label htmlFor="customPrompt" className="block text-sm font-medium text-gray-700 mb-2">
+                Custom Analysis Instructions
+              </label>
+              <textarea
+                id="customPrompt"
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={4}
+                placeholder="Enter your custom analysis instructions..."
+              />
+            </div>
+          )}
+
+          {/* User Context Input */}
+          <div>
+            <label htmlFor="userContext" className="block text-sm font-medium text-gray-700 mb-2">
+              Business Context <span className="text-gray-500 font-normal">(Optional)</span>
+            </label>
+            <textarea
+              id="userContext"
+              value={userContext}
+              onChange={(e) => setUserContext(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={2}
+              placeholder="Provide additional business context, specific concerns, or background information that will help with the analysis..."
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              This context will be combined with the selected analysis type to provide more targeted results.
+            </p>
+          </div>
+
+          {/* Preview of Final Prompt */}
+          {(selectedPromptId !== 'custom' || customPrompt.trim()) && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Analysis Preview:</h4>
+              <div className="text-xs text-gray-600 leading-relaxed max-h-20 overflow-y-auto">
+                {getFinalPrompt() || 'No analysis instructions specified'}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Document List */}
+      {/* Upload Controls */}
       {documents.length > 0 && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Documents ({documents.length})
-            </h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Ready to Analyze ({documents.length} document{documents.length !== 1 ? 's' : ''})
+              </h3>
+              <span className="text-sm text-gray-600">
+                {documents.map(doc => doc.file.name).join(', ')}
+              </span>
+            </div>
             <div className="flex space-x-2">
               <button
                 onClick={clearAll}
@@ -323,67 +527,12 @@ ${'='.repeat(80)}
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={isProcessing || documents.length === 0 || !prompt}
+                disabled={isProcessing || documents.length === 0 || !getFinalPrompt().trim()}
                 className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
               >
                 {isProcessing ? 'Analyzing...' : documents.length === 1 ? 'Analyze Document' : `Analyze ${documents.length} Documents`}
               </button>
             </div>
-          </div>
-
-          <div className="space-y-3">
-            {documents.map((doc) => (
-              <div key={doc.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl">{getStatusIcon(doc.status)}</div>
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{doc.file.name}</h4>
-                        <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
-                          <span>{formatFileSize(doc.file.size)}</span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(doc.status)}`}>
-                            {doc.status.charAt(0).toUpperCase() + doc.status.slice(1)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    {doc.status !== 'pending' && (
-                      <div className="mt-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className={`h-2 rounded-full transition-all duration-300 ${
-                              doc.status === 'completed' ? 'bg-green-500' : 
-                              doc.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'
-                            }`}
-                            style={{ width: `${doc.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Error Display */}
-                    {doc.error && (
-                      <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                        {doc.error}
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    onClick={() => removeDocument(doc.id)}
-                    className="ml-4 text-gray-400 hover:text-red-600"
-                    disabled={isProcessing}
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}
@@ -391,64 +540,188 @@ ${'='.repeat(80)}
       {/* Agent Monitor */}
       {isProcessing && (
         <div className="mb-6">
+          <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">Processing Analysis</h4>
+                  <p className="text-xs text-gray-600">Target completion: &lt;30 seconds for standard documents</p>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500">
+                ⚡ High-speed analysis
+              </div>
+            </div>
+          </div>
           <AgentMonitor isActive={isProcessing} />
         </div>
       )}
 
-      {/* Batch Results */}
+      {/* Analysis Results - Side-by-Side Layout */}
       {batchResult && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-xl font-semibold text-gray-900">
-                {batchResult.total_documents === 1 ? 'Document Analysis Complete' : 'Batch Analysis Complete'}
-              </h3>
-              <div className="flex items-center space-x-6 mt-2 text-sm text-gray-600">
-                {batchResult.total_documents > 1 && <span>Total: {batchResult.total_documents}</span>}
-                <span className="text-green-600">✓ Completed: {batchResult.completed}</span>
-                {batchResult.failed > 0 && (
-                  <span className="text-red-600">✗ Failed: {batchResult.failed}</span>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={downloadBatchReport}
-              className="px-4 py-2 text-sm text-green-600 hover:bg-green-50 rounded-md border border-green-200 transition-colors"
-            >
-              {batchResult.total_documents === 1 ? 'Download Report' : 'Download Batch Report'}
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            {batchResult.results.map((result, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg">
-                <div className="p-4 border-b border-gray-200 bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-gray-900">{result.filename}</h4>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      result.status === 'completed' 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {result.status === 'completed' ? '✓ Complete' : '✗ Failed'}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-4">
-                  {result.status === 'completed' ? (
-                    <div className="prose prose-sm max-w-none">
-                      <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
-                        {result.analysis}
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="text-red-700 bg-red-50 p-3 rounded">
-                      <strong>Error:</strong> {result.error}
-                    </div>
+        <div className="space-y-6">
+          {/* Results Header */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {batchResult.total_documents === 1 ? 'Document Analysis Complete' : 'Batch Analysis Complete'}
+                </h3>
+                <div className="flex items-center space-x-6 mt-2 text-sm text-gray-600">
+                  {batchResult.total_documents > 1 && <span>Total: {batchResult.total_documents}</span>}
+                  <span className="text-green-600">✓ Completed: {batchResult.completed}</span>
+                  {batchResult.failed > 0 && (
+                    <span className="text-red-600">✗ Failed: {batchResult.failed}</span>
                   )}
                 </div>
               </div>
-            ))}
+              <div className="flex items-center space-x-2">
+                {/* Layout Toggle Buttons - Only show if multiple documents or not in single doc mode */}
+                {documents.length > 1 && (
+                  <div className="flex bg-gray-100 rounded-md p-1">
+                    <button
+                      onClick={() => setLayoutMode('docs-full')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'docs-full' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="Documents Full Width"
+                    >
+                      📄
+                    </button>
+                    <button
+                      onClick={() => setLayoutMode('split')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'split' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="Side by Side"
+                    >
+                      ⚖️
+                    </button>
+                    <button
+                      onClick={() => setLayoutMode('analysis-full')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'analysis-full' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="Analysis Full Width"
+                    >
+                      📊
+                    </button>
+                  </div>
+                )}
+                
+                {/* Single document layout toggle - simpler version */}
+                {documents.length === 1 && (
+                  <div className="flex bg-gray-100 rounded-md p-1">
+                    <button
+                      onClick={() => setLayoutMode('docs-full')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'docs-full' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="View Document"
+                    >
+                      📄 Document
+                    </button>
+                    <button
+                      onClick={() => setLayoutMode('split')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'split' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="Side by Side View"
+                    >
+                      ⚖️ Side-by-Side
+                    </button>
+                    <button
+                      onClick={() => setLayoutMode('analysis-full')}
+                      className={`px-3 py-1 text-xs rounded ${layoutMode === 'analysis-full' ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                      title="View Analysis"
+                    >
+                      📊 Analysis
+                    </button>
+                  </div>
+                )}
+
+                {/* Analysis View Toggle */}
+                <div className="flex bg-gray-100 rounded-md p-1">
+                  <button
+                    onClick={() => setShowIssuesList(false)}
+                    className={`px-3 py-1 text-xs rounded ${!showIssuesList ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                    title="Full Analysis Text"
+                  >
+                    📝 Full Text
+                  </button>
+                  <button
+                    onClick={() => setShowIssuesList(true)}
+                    className={`px-3 py-1 text-xs rounded ${showIssuesList ? 'bg-white shadow-sm' : 'text-gray-600'}`}
+                    title="Structured Issues List"
+                  >
+                    📋 Issues List
+                  </button>
+                </div>
+                <button
+                  onClick={downloadBatchReport}
+                  className="px-4 py-2 text-sm text-green-600 hover:bg-green-50 rounded-md border border-green-200 transition-colors"
+                >
+                  {batchResult.total_documents === 1 ? 'Download Report' : 'Download Batch Report'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Side-by-Side Document and Analysis Layout */}
+          <div className={`grid gap-6 h-[800px] ${
+            layoutMode === 'docs-full' ? 'grid-cols-1' :
+            layoutMode === 'analysis-full' ? 'grid-cols-1' :
+            'grid-cols-1 lg:grid-cols-2'
+          }`}>
+            
+            {/* Document Tabs Panel */}
+            {layoutMode !== 'analysis-full' && (
+              <DocumentTabs
+                documents={documents}
+                activeDocumentId={activeDocumentId}
+                onDocumentChange={setActiveDocumentId}
+                highlightClause={highlightClause}
+                className="h-full"
+              />
+            )}
+
+            {/* Analysis Results Panel */}
+            {layoutMode !== 'docs-full' && (
+              <div className="bg-white rounded-lg shadow-md flex flex-col h-full">
+                {showIssuesList ? (
+                  // Structured Issues List View
+                  <ScrollableIssuesList
+                    analysis={batchResult.unified_analysis || batchResult.results?.[0]?.analysis || 'Analysis completed successfully.'}
+                    documents={documents}
+                    onClauseClick={handleClauseClick}
+                    className="h-full"
+                  />
+                ) : (
+                  // Full Text Analysis View
+                  <>
+                    <div className="p-4 border-b border-gray-200 bg-red-50 rounded-t-lg">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900">Legal Analysis Results</h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            {batchResult.source_documents && batchResult.source_documents.length > 1
+                              ? `Unified analysis of ${batchResult.source_documents.length} documents`
+                              : 'Risk assessment and compliance review'
+                            }
+                          </p>
+                        </div>
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          ✓ Complete
+                        </span>
+                      </div>
+                      {batchResult.source_documents && batchResult.source_documents.length > 1 && (
+                        <div className="mt-2 text-sm text-gray-600">
+                          <strong>Analyzed Documents:</strong> {batchResult.source_documents.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-8">
+                      <AnalysisResults
+                        analysis={batchResult.unified_analysis || batchResult.results?.[0]?.analysis || 'Analysis completed successfully.'}
+                        documents={documents}
+                        onDocumentReference={handleDocumentReference}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -460,31 +733,31 @@ ${'='.repeat(80)}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="text-center">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <span className="text-2xl">📄</span>
+                <span className="text-2xl">📤</span>
               </div>
               <h3 className="font-medium text-gray-900 mb-2">Upload Documents</h3>
               <p className="text-sm text-gray-600">Upload single documents or batches up to 10 for comprehensive analysis</p>
             </div>
             <div className="text-center">
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <span className="text-2xl">⚙️</span>
+              </div>
+              <h3 className="font-medium text-gray-900 mb-2">Select Analysis Type</h3>
+              <p className="text-sm text-gray-600">Choose from Red Flags Review, Review Against Base, or Negotiation Support</p>
+            </div>
+            <div className="text-center">
+              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center mx-auto mb-3">
                 <span className="text-2xl">🤖</span>
               </div>
               <h3 className="font-medium text-gray-900 mb-2">AI Agent Analysis</h3>
               <p className="text-sm text-gray-600">Watch our specialized agents analyze your documents in real-time</p>
             </div>
             <div className="text-center">
-              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <span className="text-2xl">🔍</span>
-              </div>
-              <h3 className="font-medium text-gray-900 mb-2">Risk Identification</h3>
-              <p className="text-sm text-gray-600">Identify legal risks, compliance issues, and problematic clauses</p>
-            </div>
-            <div className="text-center">
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <span className="text-2xl">📊</span>
+                <span className="text-2xl">📋</span>
               </div>
-              <h3 className="font-medium text-gray-900 mb-2">Detailed Report</h3>
-              <p className="text-sm text-gray-600">Receive comprehensive analysis with categorized findings</p>
+              <h3 className="font-medium text-gray-900 mb-2">Interactive Results</h3>
+              <p className="text-sm text-gray-600">Review findings, navigate clauses, and download comprehensive reports</p>
             </div>
           </div>
         </div>
