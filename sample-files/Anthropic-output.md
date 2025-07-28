@@ -1,8 +1,8 @@
-•	Green coded issues represent those matters which we consider are either favourable to CLIENT, or for which there are likely adequate protections in place.
+•	Low Risk issues represent those matters which we consider are either favourable to CLIENT, or for which there are likely adequate protections in place.
  
-•	Yellow coded issues represent those matters which we consider are of medium risk to CLIENT in the circumstances.
+•	Medium Risk issues represent those matters which we consider are of moderate risk to CLIENT in the circumstances.
  
-•	Red coded issues represent those matters which we consider are of medium-to-high risk in the circumstances.
+•	High Risk issues represent those matters which we consider are of significant risk in the circumstances.
  
  
 In all matters which involve risk to CLIENT, CLIENT will need to consider if they are material enough to require any change to the clause or to risk management arrangements that CLIENT have in place.

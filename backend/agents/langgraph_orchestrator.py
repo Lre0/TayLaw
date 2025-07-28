@@ -746,20 +746,20 @@ class LangGraphOrchestrator:
         
         # High risk indicators
         high_risk_terms = [
-            'red coded', 'high risk', 'critical', 'significant risk', 'major concern',
+            'high risk', 'critical', 'significant risk', 'major concern',
             'strongly recommend', 'should be rejected', 'dangerous', 'problematic',
             'unlimited liability', 'material breach', 'immediate attention'
         ]
         
         # Medium risk indicators  
         medium_risk_terms = [
-            'yellow coded', 'medium risk', 'moderate risk', 'concerning', 'noteworthy',
+            'medium risk', 'moderate risk', 'concerning', 'noteworthy',
             'should negotiate', 'recommend review', 'may want to', 'unclear', 'ambiguous'
         ]
         
         # Low risk indicators
         low_risk_terms = [
-            'green coded', 'low risk', 'minor', 'acceptable', 'reasonable', 'standard',
+            'low risk', 'minor', 'acceptable', 'reasonable', 'standard',
             'typical', 'adequate protection', 'favorable'
         ]
         
@@ -1417,15 +1417,16 @@ class LangGraphOrchestrator:
         # Create detailed issue-by-issue breakdown
         detailed_findings = self._format_detailed_findings(high_risk, medium_risk, low_risk)
         
+        print("DEBUG: Using UPDATED executive summary template!")
         combined_analysis = f"""
 LEGAL ANALYSIS REPORT - PROFESSIONAL FORMAT
 ===========================================
 
 EXECUTIVE SUMMARY:
 - Document processed: {len(chunk_analyses)} sections analyzed
-- Red coded (high-risk) findings: {len(high_risk)}
-- Yellow coded (medium-risk) findings: {len(medium_risk)}
-- Green coded (low-risk/favorable) findings: {len(low_risk)}
+- High-risk findings: {len(high_risk)}
+- Medium-risk findings: {len(medium_risk)}
+- Low-risk/favorable findings: {len(low_risk)}
 - Analysis confidence: {avg_confidence:.0%}
 - Cross-references validated: {len(cross_references)}
 
@@ -1437,15 +1438,8 @@ EXECUTIVE SUMMARY:
     def _format_detailed_findings(self, high_risk: List, medium_risk: List, low_risk: List) -> str:
         """Format detailed issue-by-issue breakdown in professional legal report format"""
         
-        # Create header with risk level definitions
+        # Create header with risk level definitions - flexible format
         detailed_report = [
-            "• Green coded issues represent those matters which we consider are either favourable to CLIENT, or for which there are likely adequate protections in place.",
-            "",
-            "• Yellow coded issues represent those matters which we consider are of medium risk to CLIENT in the circumstances.",
-            "",
-            "• Red coded issues represent those matters which we consider are of medium-to-high risk in the circumstances.",
-            "",
-            "",
             "In all matters which involve risk to CLIENT, CLIENT will need to consider if they are material enough to require any change to the clause or to risk management arrangements that CLIENT have in place.",
             "",
             "",

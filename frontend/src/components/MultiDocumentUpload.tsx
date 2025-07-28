@@ -64,7 +64,7 @@ export default function MultiDocumentUpload() {
       id: 'red-flags-review',
       name: 'Red Flags Review',
       description: 'Automated contract risk assessment and compliance issue identification with evidence-based findings',
-      template: 'Please perform a comprehensive red flags review on this contract, identifying potential legal risks, compliance issues, and problematic clauses. Focus on liability limitations, termination conditions, payment terms, intellectual property clauses, indemnification provisions, and any unusual or potentially problematic terms. Provide specific evidence from the contract text for each identified risk.',
+      template: 'Please perform a comprehensive contract risk assessment, identifying potential legal risks, compliance issues, and problematic clauses. Focus on liability limitations, termination conditions, payment terms, intellectual property clauses, indemnification provisions, and any unusual or potentially problematic terms. Provide specific evidence from the contract text for each identified risk. Use standard risk categorization (High Risk, Medium Risk, Low Risk) unless a specific format is requested.',
       version: '1.0'
     },
     {
@@ -310,13 +310,23 @@ export default function MultiDocumentUpload() {
 
     try {
       const formData = new FormData()
-      documents.forEach(doc => formData.append('files', doc.file))
-      formData.append('prompt', finalPrompt)
+      
+      // Use different endpoints based on number of documents
+      if (documents.length === 1) {
+        // Single document analysis
+        formData.append('file', documents[0].file)
+        formData.append('prompt', finalPrompt)
+      } else {
+        // Multiple document analysis
+        documents.forEach(doc => formData.append('files', doc.file))
+        formData.append('prompt', finalPrompt)
+      }
 
       // Update to analyzing status
       setDocuments(prev => prev.map(doc => ({ ...doc, status: 'analyzing' as const, progress: 30 })))
 
-      const response = await fetch(`${API_BASE_URL}/api/analyze-multiple`, {
+      const endpoint = documents.length === 1 ? '/api/analyze' : '/api/analyze-multiple'
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -336,17 +346,37 @@ export default function MultiDocumentUpload() {
       }
 
       const resultText = await response.text()
-      console.log('Raw analyze-multiple response:', resultText)
-      let result: BatchResult
+      console.log(`Raw ${endpoint} response:`, resultText)
+      let result: any
       try {
         result = JSON.parse(resultText)
       } catch (parseError) {
-        console.error('JSON parse error in analyze-multiple:', parseError)
+        console.error(`JSON parse error in ${endpoint}:`, parseError)
         console.error('Response text:', resultText)
         throw new Error('Invalid JSON response from server')
       }
       
-      // If the new multi-document orchestrator returns a batch_id, use real-time tracking
+      // Handle single document response differently
+      if (documents.length === 1 && result.analysis) {
+        // Convert single document response to batch result format
+        const singleDocResult: BatchResult = {
+          batch_id: 'single-doc',
+          total_documents: 1,
+          completed: 1,
+          failed: 0,
+          processing_time: 0,
+          analysis_type: 'individual',
+          unified_analysis: result.analysis,
+          source_documents: [documents[0].file.name]
+        }
+        
+        setBatchResult(singleDocResult)
+        setDocuments(prev => prev.map(doc => ({ ...doc, status: 'completed' as const, progress: 100 })))
+        setIsProcessing(false)
+        return
+      }
+      
+      // Multi-document response handling
       if (result.batch_id) {
         setCurrentBatchId(result.batch_id)
         

@@ -233,8 +233,45 @@ class AgentMonitor:
         }
     
     def get_activity_history(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get recent activity history"""
-        recent_activities = self.activities[-limit:] if self.activities else []
+        """Get recent activity history, ensuring milestone activities are always included"""
+        if not self.activities:
+            return []
+        
+        # Define milestone agents that should always be included
+        milestone_agents = {
+            "Document Parser", 
+            "Document Chunking Agent", 
+            "Orchestrator Agent", 
+            "Cross-Reference Agent", 
+            "Results Combination Agent", 
+            "Report Generator",
+            "Analysis Consolidation Agent"
+        }
+        
+        # Get recent activities
+        recent_activities = self.activities[-limit:]
+        
+        # Find any milestone completion activities that might have been excluded
+        milestone_completions = []
+        for activity in self.activities:
+            if (activity.agent_name in milestone_agents and 
+                activity.status == AgentStatus.COMPLETED and 
+                activity not in recent_activities):
+                milestone_completions.append(activity)
+        
+        # Combine milestone completions with recent activities, sorted by timestamp
+        all_activities = milestone_completions + recent_activities
+        all_activities.sort(key=lambda x: x.timestamp)
+        
+        # Remove duplicates while preserving order
+        seen_activities = set()
+        unique_activities = []
+        for activity in all_activities:
+            activity_key = (activity.timestamp, activity.agent_name, activity.status, activity.message)
+            if activity_key not in seen_activities:
+                seen_activities.add(activity_key)
+                unique_activities.append(activity)
+        
         return [
             {
                 "timestamp": activity.timestamp.isoformat(),
@@ -246,7 +283,7 @@ class AgentMonitor:
                 "metadata": activity.metadata,
                 "chunk_id": activity.chunk_id
             }
-            for activity in recent_activities
+            for activity in unique_activities
         ]
     
     def clear_history(self):

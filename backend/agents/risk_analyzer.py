@@ -20,11 +20,16 @@ class RiskAnalyzer:
         - Assess materiality of each risk to the client organization
         - Provide specific, actionable recommendations for contract negotiation
         - Use professional legal language appropriate for in-house counsel and legal teams
+        
+        MANDATORY RISK CATEGORIZATION:
+        You MUST use these exact risk level terms in your analysis:
+        • High Risk: Matters which are of significant risk and require immediate attention and likely contract negotiation
+        • Medium Risk: Matters which are of moderate risk to CLIENT in the circumstances and should be reviewed  
+        • Low Risk: Matters which are favorable to CLIENT, or for which there are likely adequate protections in place
 
-        RISK LEVEL DEFINITIONS:
-        • Green coded issues: Matters which are favorable to CLIENT, or for which there are likely adequate protections in place
-        • Yellow coded issues: Matters which are of medium risk to CLIENT in the circumstances  
-        • Red coded issues: Matters which are of medium-to-high risk in the circumstances
+        CRITICAL: Do NOT include any explanatory text about "Green coded", "Yellow coded", or "Red coded" issues in your response. 
+        Do NOT include lines like "• Green coded issues represent..." or "• Red coded issues represent..." in your analysis.
+        Use ONLY the High Risk/Medium Risk/Low Risk terminology above unless the user's prompt explicitly requests color-coded language.
 
         LEGAL ANALYSIS CATEGORIES:
         A. Commercial Terms of Service
@@ -84,7 +89,9 @@ class RiskAnalyzer:
         - Quote exact document language that creates the risk
         - Explain legal implications in business terms that non-lawyers can understand
 
-        IMPORTANT: Focus on provisions that could materially impact CLIENT's business operations, legal compliance, or financial position. Include both adverse provisions and any notably client-favorable terms."""
+        IMPORTANT: Focus on provisions that could materially impact CLIENT's business operations, legal compliance, or financial position. Include both adverse provisions and any notably client-favorable terms.
+        
+        OUTPUT FORMAT: Use ONLY "High Risk", "Medium Risk", and "Low Risk" terminology. Do not add any definitions or explanations about color-coded systems unless specifically requested by the user."""
         
         combined_prompt = f"""
         DOCUMENT ANALYSIS REQUEST:
@@ -95,7 +102,9 @@ class RiskAnalyzer:
         
         INSTRUCTIONS:
         Analyze this document section and identify specific legal risks. Quote the exact text that supports each finding.
-        Focus on findings where you can cite specific clauses or provisions from the document text above."""
+        Focus on findings where you can cite specific clauses or provisions from the document text above.
+        
+        REMINDER: Use High Risk/Medium Risk/Low Risk categories only. Do not include color-coded explanations."""
         
         # Retry logic with exponential backoff
         max_retries = 3
@@ -114,7 +123,13 @@ class RiskAnalyzer:
                 processing_time = time.time() - start_time
                 print(f"Risk analysis completed in {processing_time:.2f}s (attempt {attempt + 1})")
                 
-                return response.content[0].text
+                # Post-process to remove any color-coded definitions
+                result = response.content[0].text
+                print(f"BEFORE post-processing: {result[:200]}...")
+                result = self._remove_color_coded_definitions(result)
+                print(f"AFTER post-processing: {result[:200]}...")
+                
+                return result
                 
             except asyncio.TimeoutError:
                 error_msg = f"API call timed out after 8 seconds (attempt {attempt + 1}/{max_retries})"
@@ -148,6 +163,30 @@ class RiskAnalyzer:
                 {"role": "user", "content": combined_prompt}
             ]
         )
+    
+    def _remove_color_coded_definitions(self, text: str) -> str:
+        """Remove color-coded definitions from AI response"""
+        import re
+        
+        # Remove lines that define color-coded categories
+        patterns_to_remove = [
+            r'•\s*Green coded issues represent.*?\n',
+            r'•\s*Yellow coded issues represent.*?\n', 
+            r'•\s*Red coded issues represent.*?\n',
+            r'•\s*Green coded issues.*?adequate protections in place\.\s*\n',
+            r'•\s*Yellow coded issues.*?circumstances\.\s*\n',
+            r'•\s*Red coded issues.*?circumstances\.\s*\n'
+        ]
+        
+        for pattern in patterns_to_remove:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Also replace any remaining color-coded references in the executive summary
+        text = re.sub(r'Red coded \(high-risk\)', 'High-risk', text)
+        text = re.sub(r'Yellow coded \(medium-risk\)', 'Medium-risk', text)
+        text = re.sub(r'Green coded \(low-risk/favorable\)', 'Low-risk/favorable', text)
+        
+        return text
     
     async def categorize_risks(self, analysis: str) -> Dict[str, List[str]]:
         """Categorize identified risks into different types"""
