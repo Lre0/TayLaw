@@ -100,6 +100,54 @@ export default function MultiDocumentUpload() {
     return basePrompt
   }
 
+  // Get context placeholder based on selected prompt
+  const getContextPlaceholder = () => {
+    switch (selectedPromptId) {
+      case 'red-flags-review':
+        return 'e.g., "This is a cloud services vendor agreement. We\'re particularly concerned about data privacy, service level guarantees, and liability limitations given our startup status."'
+      case 'review-against-base':
+        return 'e.g., "Compare against our standard vendor template. Focus on changes to payment terms, termination clauses, and any new liability provisions that weren\'t in our original draft."'
+      case 'negotiation-support':
+        return 'e.g., "We\'re a small company with limited insurance coverage. Looking to minimize liability exposure and secure favorable termination rights in this partnership deal."'
+      case 'custom':
+        return 'Provide specific context about your business situation, concerns, or requirements...'
+      default:
+        return 'Provide additional business context, specific concerns, or background information...'
+    }
+  }
+
+  // Get example contexts based on selected prompt
+  const getExampleContexts = () => {
+    switch (selectedPromptId) {
+      case 'red-flags-review':
+        return [
+          'This is a SaaS vendor agreement for our healthcare startup. We need HIPAA compliance and are concerned about data breach liability.',
+          'Enterprise software license for a Fortune 500 company. Focus on intellectual property protection and indemnification clauses.',
+          'Cloud hosting agreement for an e-commerce platform. Key concerns are uptime guarantees and data sovereignty requirements.'
+        ]
+      case 'review-against-base':
+        return [
+          'Compare against our standard MSA template from legal. Highlight any changes to payment terms, IP ownership, or limitation of liability.',
+          'This is version 3 of negotiations. Focus on what changed from our last counteroffer, especially around termination and data retention.',
+          'Client sent this redlined version. Need to understand impact of their changes on our standard risk allocation and pricing model.'
+        ]
+      case 'negotiation-support':
+        return [
+          'We\'re a startup with limited bargaining power but need to protect our core IP. Help identify which terms we should push back on vs. accept.',
+          'Large enterprise client with significant leverage. Need strategy for negotiating more balanced liability terms without losing the deal.',
+          'Partnership agreement where both parties contribute resources. Focus on exit rights and dispute resolution mechanisms.'
+        ]
+      case 'custom':
+        return [
+          'Industry-specific regulatory requirements we need to consider...',
+          'Specific business model constraints or requirements...',
+          'Prior experience or concerns from similar agreements...'
+        ]
+      default:
+        return ['Add context about your specific situation...']
+    }
+  }
+
   const handleDocumentReference = useCallback((documentId: string) => {
     setActiveDocumentId(documentId)
     // Auto-switch to split view if currently in analysis-full mode
@@ -195,13 +243,19 @@ export default function MultiDocumentUpload() {
         )
         
         if (isComplete) {
-          // Fetch final results
+          console.log('🎯 Batch complete - fetching final results...')
+          console.log(`📊 Fetching results from: /api/batch-results/${batchId}`)
           const resultsResponse = await fetch(`http://localhost:8000/api/batch-results/${batchId}`)
           if (resultsResponse.ok) {
             const results = await resultsResponse.json()
+            console.log('✅ Final results received, stopping polling')
             setBatchResult(results)
             setIsProcessing(false)
             setCurrentBatchId(null)
+            // Return false immediately to stop polling
+            return false
+          } else {
+            console.error('❌ Failed to fetch results:', resultsResponse.status)
           }
         }
         
@@ -218,6 +272,12 @@ export default function MultiDocumentUpload() {
   const handleSubmit = async () => {
     const finalPrompt = getFinalPrompt()
     if (documents.length === 0 || !finalPrompt.trim()) return
+
+    // Debug: Log the final prompt being sent to API
+    console.log('🔍 TayLaw Debug - Final Prompt Being Sent:', finalPrompt)
+    console.log('📝 Selected Prompt ID:', selectedPromptId)
+    console.log('💼 User Context:', userContext || '(none)')
+    console.log('📄 Documents:', documents.map(d => d.file.name))
 
     setIsProcessing(true)
     setBatchResult(null)
@@ -251,9 +311,16 @@ export default function MultiDocumentUpload() {
         
         // Start polling for status updates
         const pollInterval = setInterval(async () => {
-          const shouldContinue = await pollBatchStatus(result.batch_id!)
-          if (!shouldContinue) {
+          try {
+            const shouldContinue = await pollBatchStatus(result.batch_id!)
+            if (!shouldContinue) {
+              console.log('🛑 Stopping polling interval')
+              clearInterval(pollInterval)
+            }
+          } catch (error) {
+            console.error('Polling error:', error)
             clearInterval(pollInterval)
+            setIsProcessing(false)
           }
         }, 1000) // Poll every second
         
@@ -335,47 +402,36 @@ export default function MultiDocumentUpload() {
   const downloadBatchReport = () => {
     if (!batchResult) return
 
-    let reportContent = ''
+    const analysisContent = batchResult.unified_analysis || batchResult.results?.[0]?.analysis || 'Analysis completed successfully.'
     
-    if (batchResult.analysis_type === 'unified') {
-      // Handle unified analysis
-      reportContent = `UNIFIED ANALYSIS REPORT
-========================
+    // Generate report based on document count
+    const reportTitle = batchResult.total_documents === 1 
+      ? 'LEGAL DOCUMENT ANALYSIS REPORT'
+      : 'MULTI-DOCUMENT LEGAL ANALYSIS REPORT'
+    
+    const reportContent = `${reportTitle}
+${'='.repeat(reportTitle.length)}
 
-Batch ID: ${batchResult.batch_id}
-Total Documents: ${batchResult.total_documents}
-Completed Successfully: ${batchResult.completed}
-Failed: ${batchResult.failed}
-Source Documents: ${batchResult.source_documents?.join(', ') || 'N/A'}
+Analysis Date: ${new Date().toLocaleDateString()}
+${batchResult.total_documents > 1 ? `Total Documents Analyzed: ${batchResult.total_documents}` : ''}
+${batchResult.completed > 0 ? `Successfully Processed: ${batchResult.completed}` : ''}
+${batchResult.failed > 0 ? `Failed: ${batchResult.failed}` : ''}
+${batchResult.source_documents && batchResult.source_documents.length > 1 ? `\nSource Documents: ${batchResult.source_documents.join(', ')}` : ''}
 
-${batchResult.unified_analysis}
+${analysisContent}
+
+${'='.repeat(40)}
+Generated by TayLaw Legal AI Assistant
 `
-    } else {
-      // Handle individual results (fallback)
-      reportContent = `BATCH ANALYSIS REPORT
-======================
-
-Batch ID: ${batchResult.batch_id}
-Total Documents: ${batchResult.total_documents}
-Completed Successfully: ${batchResult.completed}
-Failed: ${batchResult.failed}
-
-INDIVIDUAL DOCUMENT ANALYSES:
-${batchResult.results?.map((result, index) => `
-${index + 1}. ${result.filename}
-Status: ${result.status.toUpperCase()}
-${result.status === 'completed' ? result.analysis : `Error: ${result.error}`}
-
-${'='.repeat(80)}
-`).join('') || 'No results available'}
-`
-    }
 
     const blob = new Blob([reportContent], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `analysis_report_${batchResult.batch_id.slice(0, 8)}.txt`
+    const fileName = batchResult.total_documents === 1 
+      ? `legal_analysis_${new Date().toISOString().split('T')[0]}.txt`
+      : `multi_document_analysis_${new Date().toISOString().split('T')[0]}.txt`
+    a.download = fileName
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -480,26 +536,74 @@ ${'='.repeat(80)}
           <div>
             <label htmlFor="userContext" className="block text-sm font-medium text-gray-700 mb-2">
               Business Context <span className="text-gray-500 font-normal">(Optional)</span>
+              <span className="ml-2 text-xs text-blue-600">
+                {userContext.length}/500 characters
+              </span>
             </label>
             <textarea
               id="userContext"
               value={userContext}
-              onChange={(e) => setUserContext(e.target.value)}
+              onChange={(e) => setUserContext(e.target.value.slice(0, 500))}
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              rows={2}
-              placeholder="Provide additional business context, specific concerns, or background information that will help with the analysis..."
+              rows={3}
+              placeholder={getContextPlaceholder()}
             />
-            <p className="mt-1 text-xs text-gray-500">
-              This context will be combined with the selected analysis type to provide more targeted results.
-            </p>
+            <div className="mt-2 space-y-1">
+              <p className="text-xs text-gray-500">
+                This context will be combined with the selected analysis type to provide more targeted results.
+              </p>
+              {/* Example contexts based on selected prompt */}
+              <details className="text-xs text-gray-500">
+                <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
+                  💡 See example contexts for {predefinedPrompts.find(p => p.id === selectedPromptId)?.name}
+                </summary>
+                <div className="mt-2 pl-4 border-l-2 border-blue-200 space-y-1">
+                  {getExampleContexts().map((example, index) => (
+                    <div key={index} className="text-gray-600">
+                      <span className="font-medium">Example {index + 1}:</span> "{example}"
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
           </div>
 
           {/* Preview of Final Prompt */}
           {(selectedPromptId !== 'custom' || customPrompt.trim()) && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Analysis Preview:</h4>
-              <div className="text-xs text-gray-600 leading-relaxed max-h-20 overflow-y-auto">
-                {getFinalPrompt() || 'No analysis instructions specified'}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-blue-800 mb-3 flex items-center">
+                <span className="mr-2">👁️</span>
+                Analysis Preview - What Will Be Sent to AI:
+              </h4>
+              <div className="space-y-3">
+                {/* Base Prompt */}
+                <div>
+                  <div className="text-xs font-medium text-blue-700 mb-1">Base Analysis Template:</div>
+                  <div className="text-xs text-gray-700 bg-white rounded p-2 border">
+                    {selectedPromptId === 'custom' ? customPrompt : predefinedPrompts.find(p => p.id === selectedPromptId)?.template || 'No template selected'}
+                  </div>
+                </div>
+                
+                {/* User Context (if provided) */}
+                {userContext.trim() && (
+                  <div>
+                    <div className="text-xs font-medium text-green-700 mb-1 flex items-center">
+                      <span className="mr-1">💼</span>
+                      + Your Business Context:
+                    </div>
+                    <div className="text-xs text-gray-700 bg-green-50 rounded p-2 border border-green-200">
+                      {userContext}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Character Count */}
+                <div className="flex justify-between items-center text-xs text-gray-500 pt-2 border-t border-blue-200">
+                  <span>Total prompt length: {getFinalPrompt().length} characters</span>
+                  {userContext.trim() && (
+                    <span className="text-green-600">✓ Context added</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -546,11 +650,7 @@ ${'='.repeat(80)}
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                 <div>
                   <h4 className="text-sm font-medium text-gray-900">Processing Analysis</h4>
-                  <p className="text-xs text-gray-600">Target completion: &lt;30 seconds for standard documents</p>
                 </div>
-              </div>
-              <div className="text-xs text-gray-500">
-                ⚡ High-speed analysis
               </div>
             </div>
           </div>
@@ -566,10 +666,10 @@ ${'='.repeat(80)}
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-gray-900">
-                  {batchResult.total_documents === 1 ? 'Document Analysis Complete' : 'Batch Analysis Complete'}
+                  {batchResult.total_documents === 1 ? 'Document Analysis Complete' : 'Multi-Document Analysis Complete'}
                 </h3>
                 <div className="flex items-center space-x-6 mt-2 text-sm text-gray-600">
-                  {batchResult.total_documents > 1 && <span>Total: {batchResult.total_documents}</span>}
+                  {batchResult.total_documents > 1 && <span>Total: {batchResult.total_documents} documents</span>}
                   <span className="text-green-600">✓ Completed: {batchResult.completed}</span>
                   {batchResult.failed > 0 && (
                     <span className="text-red-600">✗ Failed: {batchResult.failed}</span>
@@ -652,7 +752,7 @@ ${'='.repeat(80)}
                   onClick={downloadBatchReport}
                   className="px-4 py-2 text-sm text-green-600 hover:bg-green-50 rounded-md border border-green-200 transition-colors"
                 >
-                  {batchResult.total_documents === 1 ? 'Download Report' : 'Download Batch Report'}
+                  {batchResult.total_documents === 1 ? 'Download Report' : 'Download Analysis Report'}
                 </button>
               </div>
             </div>
@@ -696,7 +796,7 @@ ${'='.repeat(80)}
                           <h4 className="text-lg font-semibold text-gray-900">Legal Analysis Results</h4>
                           <p className="text-sm text-gray-600 mt-1">
                             {batchResult.source_documents && batchResult.source_documents.length > 1
-                              ? `Unified analysis of ${batchResult.source_documents.length} documents`
+                              ? `Comprehensive analysis across ${batchResult.source_documents.length} documents`
                               : 'Risk assessment and compliance review'
                             }
                           </p>
@@ -707,7 +807,7 @@ ${'='.repeat(80)}
                       </div>
                       {batchResult.source_documents && batchResult.source_documents.length > 1 && (
                         <div className="mt-2 text-sm text-gray-600">
-                          <strong>Analyzed Documents:</strong> {batchResult.source_documents.join(', ')}
+                          <strong>Source Documents:</strong> {batchResult.source_documents.join(', ')}
                         </div>
                       )}
                     </div>

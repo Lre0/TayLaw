@@ -51,7 +51,6 @@ To democratize AI-powered legal assistance by providing smaller legal teams with
 
 **Technical Requirements**:
 - Process documents up to 100 pages within 2 minutes using parallel chunk analysis
-- **Fast Processing**: Standard documents analyzed within 30 seconds
 - Consistent results for identical document inputs (95% reliability target)
 - Real-time parallel processing monitoring displayed in user interface
 - Intelligent chunking that preserves legal context and clause boundaries
@@ -266,7 +265,7 @@ Recent Activity:
 - [ ] **Correct Clause Reference**: Issues list references correct clauses in documents
 - [ ] Final reports generate in professional format
 - [ ] 90% accuracy rate validated by legal expert
-- [ ] Processing completes within 2-minute target (or 30 seconds for standard documents)
+- [ ] Processing completes within 2-minute target
 
 #### System Transparency
 - [ ] 100% of agent decisions visible to users

@@ -24,12 +24,6 @@ interface AgentActivity {
   chunk_id?: string
 }
 
-interface ParallelProcessingStatus {
-  active: boolean
-  total_chunks: number
-  completed_chunks: number
-  completion_percentage: number
-}
 
 interface AgentMonitorProps {
   isActive: boolean
@@ -39,12 +33,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
   const [activities, setActivities] = useState<AgentActivity[]>([])
   const [agentStates, setAgentStates] = useState<Record<string, string>>({})
   const [, setChunkStatuses] = useState<Record<string, ChunkStatus>>({})
-  const [parallelStatus, setParallelStatus] = useState<ParallelProcessingStatus>({ 
-    active: false, 
-    total_chunks: 0, 
-    completed_chunks: 0, 
-    completion_percentage: 0 
-  })
   const [connected, setConnected] = useState(false)
   // Removed unused variables
   // Removed unused ref
@@ -103,7 +91,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
           
           setActivities(activities)
           setAgentStates(status.agents || {})
-          setParallelStatus(status.parallel_processing || { active: false, total_chunks: 0, completed_chunks: 0, completion_percentage: 0 })
           setChunkStatuses(status.chunk_statuses || {})
           setConnected(true)
         }
@@ -120,89 +107,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
     pollingIntervalRef.current = setInterval(pollAgentStatus, 250)
   }
 
-
-
-
-  const getMainAgents = () => {
-    // Simplified workflow progress based on actual state
-    const steps = [
-      { name: 'Document Parser', progress: getStepProgress('parsing') },
-      { name: 'Document Chunking', progress: getStepProgress('chunking') }, 
-      { name: 'Parallel Analysis', progress: getStepProgress('analysis') },
-      { name: 'Cross-Reference', progress: getStepProgress('cross_ref') },
-      { name: 'Results Combination', progress: getStepProgress('combination') },
-      { name: 'Report Generation', progress: getStepProgress('report') }
-    ]
-
-    return steps.map(step => {
-      let color, icon, status
-      
-      if (step.progress === 100) {
-        color = 'bg-green-500'
-        icon = '✅'
-        status = 'completed'
-      } else if (step.progress > 0) {
-        color = 'bg-blue-500'
-        icon = '🔄'
-        status = 'processing'
-      } else {
-        color = 'bg-gray-300'
-        icon = '⚪'
-        status = 'idle'
-      }
-
-      return {
-        name: step.name,
-        progress: step.progress,
-        color,
-        icon,
-        status
-      }
-    })
-  }
-
-  const getStepProgress = (step: string): number => {
-    // Don't show any progress until we actually have agent states
-    if (Object.keys(agentStates).length === 0) return 0
-    
-    const hasDocumentParser = agentStates['Document Parser'] === 'completed'
-    const hasChunking = agentStates['Document Chunking Agent'] === 'completed'
-    const parallelComplete = parallelStatus.completed_chunks >= parallelStatus.total_chunks && parallelStatus.total_chunks > 0
-    const hasCrossRef = agentStates['Cross-Reference Agent'] === 'completed'
-    const hasCombination = agentStates['Results Combination Agent'] === 'completed'
-    const hasReport = agentStates['Report Generator'] === 'completed'
-    
-    // Determine progress based on actual workflow state
-    switch (step) {
-      case 'parsing':
-        return hasDocumentParser ? 100 : (agentStates['Document Parser'] === 'processing' ? 50 : 0)
-      
-      case 'chunking':
-        if (!hasDocumentParser) return 0
-        return hasChunking ? 100 : (agentStates['Document Chunking Agent'] === 'processing' ? 50 : 0)
-      
-      case 'analysis':
-        if (!hasChunking) return 0
-        if (parallelStatus.total_chunks === 0) return 0
-        return parallelComplete ? 100 : parallelStatus.completion_percentage
-      
-      case 'cross_ref':
-        if (!parallelComplete) return 0
-        return hasCrossRef ? 100 : (agentStates['Cross-Reference Agent'] === 'processing' ? 50 : 0)
-      
-      case 'combination':
-        if (!hasCrossRef) return 0
-        return hasCombination ? 100 : (agentStates['Results Combination Agent'] === 'processing' ? 50 : 0)
-      
-      case 'report':
-        if (!hasCombination) return 0
-        return hasReport ? 100 : (agentStates['Report Generator'] === 'processing' ? 50 : 0)
-      
-      default:
-        return 0
-    }
-  }
-
   const getKeyMilestones = () => {
     // Filter activities to show only key milestones
     const keyMilestones = [
@@ -210,6 +114,7 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
       { text: 'Document split into chunks', agent: 'Document Chunking Agent', icon: '✂️' },
       { text: 'Parallel risk analysis completed', agent: 'Orchestrator Agent', icon: '🔍' },
       { text: 'Cross-reference validation done', agent: 'Cross-Reference Agent', icon: '🔗' },
+      { text: 'Analysis consolidated across documents', agent: 'Analysis Consolidation Agent', icon: '🔄' },
       { text: 'Results combined and report generated', agent: 'Report Generator', icon: '📊' }
     ]
 
@@ -218,15 +123,15 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
       const isCompleted = agentStatus === 'completed'
       const isProcessing = agentStatus === 'processing'
       
-      // Find the most recent activity for this agent
+      // Find the completion activity for this agent (when status changed to completed)
       const agentActivities = activities.filter(a => a.agent_name === milestone.agent)
-      const lastActivity = agentActivities[agentActivities.length - 1]
+      const completionActivity = agentActivities.find(a => a.status === 'completed') || agentActivities[agentActivities.length - 1]
       
       return {
         ...milestone,
         completed: isCompleted,
         processing: isProcessing,
-        time: isCompleted && lastActivity ? new Date(lastActivity.timestamp).toLocaleTimeString() : null,
+        time: isCompleted && completionActivity ? new Date(completionActivity.timestamp).toLocaleTimeString() : null,
         icon: isCompleted ? '✅' : isProcessing ? '🔄' : milestone.icon
       }
     })
@@ -253,56 +158,6 @@ export default function AgentMonitor({ isActive }: AgentMonitorProps) {
               {connected ? 'Live' : 'Offline'}
             </span>
           </div>
-        </div>
-      </div>
-
-      {/* Parallel Processing Status */}
-      {parallelStatus.active && (
-        <div className="p-4 border-b border-gray-200">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">Document Analysis Progress</h4>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-gray-600">Overall Progress</span>
-              <span className="text-sm font-medium text-gray-900">
-                {parallelStatus.completed_chunks} / {parallelStatus.total_chunks} chunks
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
-                style={{ width: `${parallelStatus.completion_percentage}%` }}
-              ></div>
-            </div>
-            <div className="text-xs text-gray-500">
-              {parallelStatus.completion_percentage.toFixed(0)}% complete
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Agent Progress */}
-      <div className="p-4 border-b border-gray-200">
-        <h4 className="text-sm font-medium text-gray-700 mb-3">Agent Progress</h4>
-        <div className="space-y-3">
-          {getMainAgents().map((agent) => (
-            <div key={agent.name} className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2 w-36">
-                <span>{agent.icon}</span>
-                <span className="text-sm font-medium text-gray-700">{agent.name}</span>
-              </div>
-              <div className="flex-1">
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full transition-all duration-300 ${agent.color}`}
-                    style={{ width: `${agent.progress}%` }}
-                  ></div>
-                </div>
-              </div>
-              <div className="text-xs text-gray-500 w-12 text-right">
-                {agent.progress}%
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 

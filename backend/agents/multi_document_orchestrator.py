@@ -39,6 +39,7 @@ class BatchJob:
     completed_at: Optional[float] = None
     completed_count: int = 0
     failed_count: int = 0
+    cached_unified_analysis: Optional[str] = None
 
 class DocumentProcessingQueue:
     """Queue manager for document processing with concurrency control"""
@@ -236,7 +237,7 @@ class DocumentProcessingQueue:
             ]
         }
     
-    def get_batch_results(self, batch_id: str, unified: bool = True) -> Optional[Dict[str, Any]]:
+    async def get_batch_results(self, batch_id: str, unified: bool = True) -> Optional[Dict[str, Any]]:
         """Get final results of a completed batch"""
         batch_job = self.batch_jobs.get(batch_id)
         if not batch_job:
@@ -251,11 +252,16 @@ class DocumentProcessingQueue:
         }
         
         if unified:
-            # Return unified analysis combining all documents
-            unified_analysis = self._create_unified_analysis(batch_job)
+            # Use cached unified analysis if available, otherwise generate it
+            if batch_job.cached_unified_analysis is None:
+                print(f"DEBUG: Generating unified analysis for batch {batch_id} (first time)")
+                batch_job.cached_unified_analysis = await self._create_unified_analysis(batch_job)
+            else:
+                print(f"DEBUG: Using cached unified analysis for batch {batch_id}")
+                
             base_result.update({
                 "analysis_type": "unified",
-                "unified_analysis": unified_analysis,
+                "unified_analysis": batch_job.cached_unified_analysis,
                 "source_documents": [doc.filename for doc in batch_job.documents if doc.status == DocumentStatus.COMPLETED]
             })
         else:
@@ -276,31 +282,22 @@ class DocumentProcessingQueue:
         
         return base_result
     
-    def _create_unified_analysis(self, batch_job: BatchJob) -> str:
+    async def _create_unified_analysis(self, batch_job: BatchJob) -> str:
         """Combine individual document analyses into a unified red flags report"""
+        print(f"DEBUG: Creating unified analysis for batch {batch_job.batch_id} - SHOULD ONLY HAPPEN ONCE")
         completed_docs = [doc for doc in batch_job.documents if doc.status == DocumentStatus.COMPLETED and doc.result]
         
         if not completed_docs:
             return "No documents were successfully analyzed."
         
-        # Collect all red flags and findings from individual analyses
-        all_red_flags = []
-        document_summaries = []
-        
-        for doc in completed_docs:
-            analysis = doc.result
-            if analysis:
-                # Extract red flags and important findings from each document's analysis
-                document_summaries.append(f"**{doc.filename}**: Analyzed successfully")
-                
-                # Add the analysis content with document identification
-                all_red_flags.append(f"\n### Analysis from {doc.filename}\n{analysis}")
+        # Parse and consolidate all red flags from individual analyses
+        consolidated_issues = await self._consolidate_red_flags(completed_docs)
         
         # Create unified analysis report
         unified_report = f"""# Unified Red Flags Analysis Report
 
 ## Executive Summary
-Multi-document analysis completed for {len(completed_docs)} document(s):
+Multi-document consolidated analysis for {len(completed_docs)} document(s):
 {chr(10).join(f"• {doc.filename}" for doc in completed_docs)}
 
 ## Processing Summary
@@ -309,22 +306,194 @@ Multi-document analysis completed for {len(completed_docs)} document(s):
 - **Failed**: {batch_job.failed_count}
 - **Processing Time**: {(batch_job.completed_at - batch_job.started_at):.2f} seconds
 
-## Comprehensive Red Flags Analysis
-The following analysis combines red flags and risk assessments from all documents:
+## Key Issues Identified
 
-{"".join(all_red_flags)}
+{consolidated_issues}
 
-## Overall Risk Assessment
-This report consolidates findings from {len(completed_docs)} document(s). Each document's specific findings are included above with clear document identification. Review each section carefully for document-specific risks and considerations.
+## Risk Assessment Summary
+This unified analysis consolidates findings from all {len(completed_docs)} document(s) into a single comprehensive red flags report. Each issue listed above represents risks identified across the document set, with specific document references where the issues were found.
 
-## Next Steps
-1. Review each document-specific analysis above
-2. Prioritize high-risk findings across all documents
-3. Consider cumulative risk exposure across the document set
-4. Address critical issues identified in any of the analyzed documents
+## Recommendations
+1. Address critical and high-risk issues identified above as priority
+2. Review moderate-risk items for potential business impact
+3. Consider cumulative risk exposure across all analyzed documents
+4. Implement standardized language improvements for future documents
 """
         
         return unified_report
+
+    async def _consolidate_red_flags(self, completed_docs: List[DocumentJob]) -> str:
+        """Parse individual analyses and consolidate into unified red flags list"""
+        import re
+        
+        # Collect all individual analyses and check for error messages
+        all_analyses = []
+        error_analyses = []
+        
+        for doc in completed_docs:
+            if doc.result:
+                # Check if the result is an error message
+                if doc.result.startswith("Error analyzing document after") or "attempts:" in doc.result:
+                    error_analyses.append({
+                        'filename': doc.filename,
+                        'error': doc.result
+                    })
+                    print(f"Error result for {doc.filename}: {doc.result[:100]}...")
+                else:
+                    all_analyses.append({
+                        'filename': doc.filename,
+                        'content': doc.result
+                    })
+                    print(f"Analysis received for {doc.filename}: {len(doc.result)} characters")
+            else:
+                print(f"No result for {doc.filename}")
+        
+        # If we have error analyses, skip API consolidation and go straight to fallback
+        if error_analyses:
+            print(f"Found {len(error_analyses)} error analyses, using fallback consolidation")
+            return self._simple_consolidation_fallback(completed_docs)
+        
+        if not all_analyses:
+            print("No analyses found - returning fallback message")
+            return "No issues identified in the analyzed documents."
+        
+        # Use RiskAnalyzer to consolidate findings into unified format
+        try:
+            from .risk_analyzer import RiskAnalyzer
+            
+            # Prepare consolidation prompt
+            analyses_text = "\n\n---DOCUMENT SEPARATOR---\n\n".join([
+                f"DOCUMENT: {analysis['filename']}\nANALYSIS:\n{analysis['content']}"
+                for analysis in all_analyses
+            ])
+            
+            consolidation_prompt = f"""You are a legal analysis consolidation expert. Your task is to take multiple individual document red flags analyses and create a single, unified list of key issues.
+
+INDIVIDUAL ANALYSES:
+{analyses_text}
+
+CONSOLIDATION INSTRUCTIONS:
+1. Review all the individual document analyses above
+2. Extract the key red flags and issues from each document
+3. Organize findings by document first, then by risk level within each document
+4. For each document, categorize issues as: Critical, High Risk, Moderate Risk, Low Risk
+5. Present each issue as a clear, standalone legal concern
+6. Focus on actionable legal risks and concerns
+
+FORMAT YOUR RESPONSE EXACTLY AS:
+
+## [Document 1 Name]
+
+### Critical Issues
+• [Issue description]
+• [Next issue if any]
+
+### High Risk Issues  
+• [Issue description]
+• [Next issue if any]
+
+### Moderate Risk Issues
+• [Issue description]
+• [Next issue if any]
+
+### Low Risk Issues
+• [Issue description]
+• [Next issue if any]
+
+## [Document 2 Name]
+
+### Critical Issues
+• [Issue description]
+
+### High Risk Issues  
+• [Issue description]
+
+[Continue for all documents...]
+
+If a document has no issues in a risk category, omit that section for that document. If a document has no significant issues at all, state "No significant red flags identified in this document."
+"""
+
+            # Get consolidation using existing RiskAnalyzer
+            risk_analyzer = RiskAnalyzer()
+            print(f"Consolidating {len(all_analyses)} analyses...")
+            
+            # Log consolidation start
+            from .agent_monitor import agent_monitor, AgentStatus, LogLevel
+            await agent_monitor.log_activity(
+                "Analysis Consolidation Agent",
+                AgentStatus.PROCESSING,
+                f"Consolidating findings from {len(all_analyses)} documents...",
+                LogLevel.INFO
+            )
+            
+            consolidated_result = await risk_analyzer.analyze_risks(analyses_text, consolidation_prompt)
+            
+            # Log consolidation completion
+            await agent_monitor.log_activity(
+                "Analysis Consolidation Agent",
+                AgentStatus.COMPLETED,
+                f"Consolidation complete - {len(consolidated_result)} characters generated",
+                LogLevel.SUCCESS
+            )
+            
+            print(f"Consolidation complete: {len(consolidated_result)} characters")
+            
+            return consolidated_result
+            
+        except Exception as e:
+            print(f"Consolidation failed: {e}")
+            # Fallback to simple consolidation if API fails
+            fallback_result = self._simple_consolidation_fallback(completed_docs)
+            print(f"Using fallback consolidation")
+            return fallback_result
+
+    def _simple_consolidation_fallback(self, completed_docs: List[DocumentJob]) -> str:
+        """Enhanced fallback consolidation when Claude API is unavailable"""
+        issues_found = []
+        
+        # Enhanced keyword search for legal issues
+        risk_keywords = ['risk', 'issue', 'concern', 'problem', 'flag', 'liability', 'termination', 
+                        'breach', 'violation', 'penalty', 'damages', 'disclaimer', 'limitation',
+                        'exclusion', 'indemnify', 'indemnification', 'warranty', 'represent',
+                        'compliance', 'regulatory', 'jurisdiction', 'governing law', 'dispute']
+        
+        for doc in completed_docs:
+            if doc.result:
+                doc_issues = []
+                content_lower = doc.result.lower()
+                
+                # Look for any risk-related keywords in the entire document
+                if any(keyword in content_lower for keyword in risk_keywords):
+                    # Extract sentences that contain legal risk terms
+                    sentences = doc.result.split('.')
+                    for sentence in sentences:
+                        sentence = sentence.strip()
+                        if len(sentence) > 20 and any(keyword in sentence.lower() for keyword in risk_keywords):
+                            # Clean up sentence and truncate if too long
+                            clean_sentence = sentence.replace('\n', ' ').strip()
+                            if len(clean_sentence) > 150:
+                                clean_sentence = clean_sentence[:150] + "..."
+                            doc_issues.append(clean_sentence)
+                            if len(doc_issues) >= 3:  # Limit to 3 issues per document
+                                break
+                
+                # If we found legal content, include it
+                if doc_issues:
+                    issues_found.append(f"**{doc.filename}:**")
+                    for issue in doc_issues:
+                        issues_found.append(f"• {issue}")
+                    issues_found.append("")  # Add spacing between documents
+                else:
+                    # Even if no keywords, check if there's substantial legal content
+                    if len(doc.result) > 500:  # Substantial content
+                        issues_found.append(f"**{doc.filename}:**")
+                        issues_found.append(f"• Document analyzed - {len(doc.result)} characters of legal content processed")
+                        issues_found.append("")
+        
+        if not issues_found:
+            return "• No significant red flags identified across the analyzed documents"
+            
+        return "### Issues Identified Across Documents\n\n" + "\n".join(issues_found)
 
 class MultiDocumentOrchestrator:
     """High-level orchestrator for multi-document analysis workflows"""
@@ -355,7 +524,7 @@ class MultiDocumentOrchestrator:
             self.active_batches[batch_id] = "completed"
             
             # Generate results with unified analysis by default
-            results = self.queue.get_batch_results(batch_id, unified=unified)
+            results = await self.queue.get_batch_results(batch_id, unified=unified)
             
             total_time = time.time() - start_time
             

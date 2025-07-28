@@ -197,13 +197,13 @@ export default function DocumentTabs({
                     key={lineIndex} 
                     className={`${
                       isHeader 
-                        ? 'font-bold text-gray-900 mt-4 mb-2 text-base border-b border-gray-200 pb-1' 
+                        ? 'text-gray-900 mt-4 mb-2 text-base border-b border-gray-200 pb-1' 
                         : isSubHeader
-                        ? 'font-semibold text-gray-800 mt-3 mb-1 ml-4'
+                        ? 'text-gray-800 mt-3 mb-1 ml-4'
                         : isListItem
                         ? 'text-gray-700 ml-6 mb-1'
                         : 'text-gray-700 mb-1'
-                    } ${lineContainsHighlight ? 'bg-yellow-200 font-medium' : ''}`}
+                    } ${lineContainsHighlight ? 'bg-yellow-200' : ''}`}
                   >
                     {trimmedLine || '\u00A0'}
                   </div>

@@ -260,15 +260,19 @@ async def get_batch_status(batch_id: str):
 @app.get("/api/batch-results/{batch_id}")
 async def get_batch_results(batch_id: str, unified: bool = True):
     """Get the final results of a completed batch"""
+    print(f"🔄 API call to batch-results for batch {batch_id}")
     try:
-        results = multi_document_orchestrator.queue.get_batch_results(batch_id, unified=unified)
+        results = await multi_document_orchestrator.queue.get_batch_results(batch_id, unified=unified)
         if results is None:
+            print(f"❌ Batch {batch_id} not found")
             return JSONResponse(
                 status_code=404,
                 content={"error": f"Batch {batch_id} not found"}
             )
+        print(f"✅ Returning results for batch {batch_id}")
         return JSONResponse(content=results)
     except Exception as e:
+        print(f"💥 Error getting batch results: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
