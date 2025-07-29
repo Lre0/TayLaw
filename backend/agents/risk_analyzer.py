@@ -10,7 +10,7 @@ class RiskAnalyzer:
         # Use Haiku for maximum speed - optimized for fast legal analysis
         self.model = "claude-3-haiku-20240307"
     
-    async def analyze_risks(self, document_text: str, user_prompt: str) -> str:
+    async def analyze_risks(self, document_text: str, user_prompt: str, allow_color_coding: bool = False) -> str:
         """Analyze document for legal risks and red flags with timeout and retry logic"""
         
         system_prompt = """You are an experienced legal advisor conducting a comprehensive contract risk assessment. Provide analysis in the structured professional format used by law firms for client reporting.
@@ -27,9 +27,8 @@ class RiskAnalyzer:
         • Medium Risk: Matters which are of moderate risk to CLIENT in the circumstances and should be reviewed  
         • Low Risk: Matters which are favorable to CLIENT, or for which there are likely adequate protections in place
 
-        CRITICAL: Do NOT include any explanatory text about "Green coded", "Yellow coded", or "Red coded" issues in your response. 
-        Do NOT include lines like "• Green coded issues represent..." or "• Red coded issues represent..." in your analysis.
-        Use ONLY the High Risk/Medium Risk/Low Risk terminology above unless the user's prompt explicitly requests color-coded language.
+        CRITICAL: Use only High Risk/Medium Risk/Low Risk terminology in your analysis unless the user specifically requests color-coded formatting.
+        Do NOT include explanatory lines like "• Green coded issues represent..." unless specifically requested.
 
         LEGAL ANALYSIS CATEGORIES:
         A. Commercial Terms of Service
@@ -91,7 +90,7 @@ class RiskAnalyzer:
 
         IMPORTANT: Focus on provisions that could materially impact CLIENT's business operations, legal compliance, or financial position. Include both adverse provisions and any notably client-favorable terms.
         
-        OUTPUT FORMAT: Use ONLY "High Risk", "Medium Risk", and "Low Risk" terminology. Do not add any definitions or explanations about color-coded systems unless specifically requested by the user."""
+        OUTPUT FORMAT: Use "High Risk", "Medium Risk", and "Low Risk" terminology unless color-coded formatting is specifically requested."""
         
         combined_prompt = f"""
         DOCUMENT ANALYSIS REQUEST:
@@ -104,7 +103,7 @@ class RiskAnalyzer:
         Analyze this document section and identify specific legal risks. Quote the exact text that supports each finding.
         Focus on findings where you can cite specific clauses or provisions from the document text above.
         
-        REMINDER: Use High Risk/Medium Risk/Low Risk categories only. Do not include color-coded explanations."""
+        REMINDER: Use High Risk/Medium Risk/Low Risk categories unless color-coded formatting is specifically requested."""
         
         # Retry logic with exponential backoff
         max_retries = 3
@@ -123,11 +122,14 @@ class RiskAnalyzer:
                 processing_time = time.time() - start_time
                 print(f"Risk analysis completed in {processing_time:.2f}s (attempt {attempt + 1})")
                 
-                # Post-process to remove any color-coded definitions
+                # Post-process to remove any color-coded definitions only if not allowed
                 result = response.content[0].text
-                print(f"BEFORE post-processing: {result[:200]}...")
-                result = self._remove_color_coded_definitions(result)
-                print(f"AFTER post-processing: {result[:200]}...")
+                if not allow_color_coding:
+                    print(f"BEFORE post-processing: {result[:200]}...")
+                    result = self._remove_color_coded_definitions(result)
+                    print(f"AFTER post-processing: {result[:200]}...")
+                else:
+                    print(f"Color coding allowed - skipping post-processing")
                 
                 return result
                 
@@ -165,7 +167,7 @@ class RiskAnalyzer:
         )
     
     def _remove_color_coded_definitions(self, text: str) -> str:
-        """Remove color-coded definitions from AI response"""
+        """Remove color-coded definitions and references from AI response"""
         import re
         
         # Remove lines that define color-coded categories
@@ -175,16 +177,51 @@ class RiskAnalyzer:
             r'•\s*Red coded issues represent.*?\n',
             r'•\s*Green coded issues.*?adequate protections in place\.\s*\n',
             r'•\s*Yellow coded issues.*?circumstances\.\s*\n',
-            r'•\s*Red coded issues.*?circumstances\.\s*\n'
+            r'•\s*Red coded issues.*?circumstances\.\s*\n',
+            # Additional patterns for color-coded explanations
+            r'.*?Green coded.*?\n',
+            r'.*?Yellow coded.*?\n',
+            r'.*?Red coded.*?\n',
+            r'.*?green coded.*?\n',
+            r'.*?yellow coded.*?\n',
+            r'.*?red coded.*?\n',
+            # Remove color-coded formatting in titles
+            r'\*\*.*?coded.*?\*\*',
+            r'##.*?coded.*?\n',
+            # Remove parenthetical color references
+            r'\(green coded\)',
+            r'\(yellow coded\)',
+            r'\(red coded\)',
+            r'\(Green coded\)',
+            r'\(Yellow coded\)',
+            r'\(Red coded\)'
         ]
         
         for pattern in patterns_to_remove:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
         
-        # Also replace any remaining color-coded references in the executive summary
-        text = re.sub(r'Red coded \(high-risk\)', 'High-risk', text)
-        text = re.sub(r'Yellow coded \(medium-risk\)', 'Medium-risk', text)
-        text = re.sub(r'Green coded \(low-risk/favorable\)', 'Low-risk/favorable', text)
+        # Replace any remaining color-coded references
+        replacements = [
+            (r'Red coded \(high-risk\)', 'High-risk'),
+            (r'Yellow coded \(medium-risk\)', 'Medium-risk'),
+            (r'Green coded \(low-risk/favorable\)', 'Low-risk/favorable'),
+            (r'red coded', 'high-risk'),
+            (r'yellow coded', 'medium-risk'),
+            (r'green coded', 'low-risk'),
+            (r'Red coded', 'High-risk'),
+            (r'Yellow coded', 'Medium-risk'),
+            (r'Green coded', 'Low-risk'),
+            # Remove any remaining color-coded formatting
+            (r'coded \(high-risk\)', 'high-risk'),
+            (r'coded \(medium-risk\)', 'medium-risk'),
+            (r'coded \(low-risk\)', 'low-risk'),
+            (r'coded high-risk', 'high-risk'),
+            (r'coded medium-risk', 'medium-risk'),
+            (r'coded low-risk', 'low-risk')
+        ]
+        
+        for pattern, replacement in replacements:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
         
         return text
     

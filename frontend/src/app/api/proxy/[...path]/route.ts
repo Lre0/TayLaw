@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const BACKEND_URL = 'https://9c99575b6efd.ngrok-free.app'
+const BACKEND_URL = 'https://4dfad74b8181.ngrok-free.app'
 
 export async function GET(
   request: NextRequest,

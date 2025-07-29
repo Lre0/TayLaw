@@ -16,7 +16,8 @@ class UnifiedDocumentOrchestrator:
     async def analyze_documents(self, 
                               files_data: Union[Dict[str, Any], List[Dict[str, Any]]], 
                               prompt: str, 
-                              unified: bool = True) -> Dict[str, Any]:
+                              unified: bool = True,
+                              color_coded: bool = False) -> Dict[str, Any]:
         """
         Unified document analysis - handles single or multiple documents
         
@@ -24,6 +25,7 @@ class UnifiedDocumentOrchestrator:
             files_data: Single file dict or list of file dicts with 'filename' and 'file_content'
             prompt: Analysis prompt
             unified: Whether to return unified analysis for multiple documents
+            color_coded: Whether to use color-coded formatting (green/yellow/red)
         """
         start_time = time.time()
         
@@ -40,24 +42,33 @@ class UnifiedDocumentOrchestrator:
         # Clear agent monitor history
         agent_monitor.clear_history()
         
+        # Modify prompt if color coding is requested
+        if color_coded:
+            enhanced_prompt = f"{prompt}\n\nFORMATTING: Please use color-coded language in your analysis (Green coded for low-risk/favorable, Yellow coded for medium-risk, Red coded for high-risk issues)."
+        else:
+            enhanced_prompt = prompt
+
         await agent_monitor.log_activity(
             "Unified Document Orchestrator",
             AgentStatus.PROCESSING,
-            f"Starting analysis of {len(files_list)} document(s)",
+            f"Starting analysis of {len(files_list)} document(s) (color_coded={color_coded})",
             LogLevel.INFO,
-            metadata={"document_count": len(files_list), "unified_analysis": unified}
+            metadata={"document_count": len(files_list), "unified_analysis": unified, "color_coded": color_coded}
         )
         
         try:
+            # Initialize failed_results for all cases
+            failed_results = []
+            
             # Process documents in parallel with controlled concurrency
             if len(files_list) == 1:
                 # Single document - direct processing
-                result = await self._process_single_document(files_list[0], prompt)
+                result = await self._process_single_document(files_list[0], enhanced_prompt, color_coded=color_coded)
                 results = [result]
             else:
                 # Multiple documents - parallel processing
                 tasks = [
-                    self._process_single_document_with_semaphore(file_data, prompt, i)
+                    self._process_single_document_with_semaphore(file_data, enhanced_prompt, i, color_coded)
                     for i, file_data in enumerate(files_list)
                 ]
                 
@@ -72,7 +83,6 @@ class UnifiedDocumentOrchestrator:
                 
                 # Handle any exceptions in results
                 successful_results = []
-                failed_results = []
                 
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
@@ -112,7 +122,7 @@ class UnifiedDocumentOrchestrator:
             
             elif unified and len(results) > 1:
                 # Multiple documents with unified analysis
-                unified_analysis = await self._create_unified_analysis(results, prompt)
+                unified_analysis = await self._create_unified_analysis(results, enhanced_prompt)
                 
                 await agent_monitor.log_activity(
                     "Unified Document Orchestrator",
@@ -187,12 +197,12 @@ class UnifiedDocumentOrchestrator:
             )
             raise e
     
-    async def _process_single_document_with_semaphore(self, file_data: Dict[str, Any], prompt: str, index: int) -> Dict[str, Any]:
+    async def _process_single_document_with_semaphore(self, file_data: Dict[str, Any], prompt: str, index: int, color_coded: bool = False) -> Dict[str, Any]:
         """Process a single document with semaphore control for concurrency limiting"""
         async with self.semaphore:
-            return await self._process_single_document(file_data, prompt, index)
+            return await self._process_single_document(file_data, prompt, index, color_coded)
     
-    async def _process_single_document(self, file_data: Dict[str, Any], prompt: str, index: Optional[int] = None) -> Dict[str, Any]:
+    async def _process_single_document(self, file_data: Dict[str, Any], prompt: str, index: Optional[int] = None, color_coded: bool = False) -> Dict[str, Any]:
         """Process a single document and return structured result"""
         start_time = time.time()
         filename = file_data['filename']
@@ -213,7 +223,8 @@ class UnifiedDocumentOrchestrator:
             analysis = await self.langgraph_orchestrator.process_document(
                 file_content=file_content,
                 filename=filename,
-                prompt=prompt
+                prompt=prompt,
+                color_coded=color_coded
             )
             
             processing_time = time.time() - start_time

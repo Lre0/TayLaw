@@ -2,7 +2,7 @@
 
 ## Current Setup
 - **Frontend**: https://guided-kite-heartily.ngrok-free.app (static domain)
-- **Backend**: https://9c99575b6efd.ngrok-free.app (configured in ngrok.yml)
+- **Backend**: https://4dfad74b8181.ngrok-free.app (configured in ngrok.yml)
 
 ## Start All Services
 
@@ -14,7 +14,7 @@ python -m uvicorn main:app --reload --port 8000
 
 **Terminal 2 - Backend & Frontend Ngrok:**
 ```bash
-ngrok start --all
+ngrok start --all --config ngrok.yml
 ```
 
 **Terminal 3 - Frontend Server:**
@@ -25,7 +25,7 @@ npm run dev
 
 ## Testing
 1. Visit https://guided-kite-heartily.ngrok-free.app to access the app
-2. Test backend connectivity at https://9c99575b6efd.ngrok-free.app
+2. Test backend connectivity at https://4dfad74b8181.ngrok-free.app 
 3. Both should be working now with CORS properly configured
 
 ## Environment Behavior

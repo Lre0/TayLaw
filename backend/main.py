@@ -56,7 +56,8 @@ async def options_handler(path: str):
 async def analyze_document(
     files: Union[UploadFile, list[UploadFile]] = File(...),
     prompt: str = Form(...),
-    unified: bool = Form(True)
+    unified: bool = Form(True),
+    color_coded: bool = Form(False)
 ):
     """Unified endpoint for single or multiple document analysis"""
     try:
@@ -100,7 +101,7 @@ async def analyze_document(
             })
         
         # Use unified orchestrator
-        result = await unified_orchestrator.analyze_documents(files_data, prompt, unified)
+        result = await unified_orchestrator.analyze_documents(files_data, prompt, unified, color_coded)
         
         return JSONResponse(content=result)
     

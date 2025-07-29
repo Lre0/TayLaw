@@ -41,6 +41,7 @@ class WorkflowState(TypedDict):
     error: str
     processing_start_time: float
     total_chunks: int
+    color_coded: bool
 
 class LangGraphOrchestrator:
     """LangGraph-based orchestrator for multi-agent legal document analysis"""
@@ -221,7 +222,7 @@ class LangGraphOrchestrator:
                 "chunk_index": 0,
                 "content": text,
                 "page_range": "1-end",
-                "section_context": "Full Document",
+                "section_context": "Document Section",
                 "char_position": 0,
                 "context_overlap": "",
                 "status": "ready",
@@ -710,8 +711,14 @@ class LangGraphOrchestrator:
                 section_ref_match = re.search(r'\(Section\s+[\w\.]+\)', subsection_title)
                 section_reference = section_ref_match.group(0) if section_ref_match else ""
                 
-                # Clean up the title by removing section reference
-                clean_title = re.sub(r'\s*\(Section\s+[\w\.]+\)', '', subsection_title)
+                # Remove the leading number and clean up the title by removing section reference
+                # Extract the number first, then remove it and the section reference
+                number_match = re.match(r'^(\d+\.\s*)', subsection_title)
+                extracted_number = number_match.group(1) if number_match else ""
+                
+                # Remove both the number and section reference from title
+                clean_title = re.sub(r'^\d+\.\s*', '', subsection_title)  # Remove leading number
+                clean_title = re.sub(r'\s*\(Section\s+[\w\.]+\)', '', clean_title)  # Remove section reference
                 
                 # Extract business impact and recommendations from detailed guidance
                 business_impact = self._extract_business_impact_from_guidance(detailed_guidance)
@@ -1352,6 +1359,7 @@ class LangGraphOrchestrator:
         try:
             chunk_analyses = state["chunk_analyses"]
             cross_references = state["cross_references"]
+            color_coded = state.get("color_coded", False)
             
             await agent_monitor.log_activity(
                 "Results Combination Agent", 
@@ -1361,7 +1369,7 @@ class LangGraphOrchestrator:
                 progress=0.3
             )
             
-            combined_analysis = self._combine_chunk_analyses(chunk_analyses, cross_references)
+            combined_analysis = self._combine_chunk_analyses(chunk_analyses, cross_references, color_coded)
             state["combined_analysis"] = combined_analysis
             
             await agent_monitor.log_activity(
@@ -1395,7 +1403,7 @@ class LangGraphOrchestrator:
         
         return state
     
-    def _combine_chunk_analyses(self, chunk_analyses: Dict[str, ChunkData], cross_references: List[Dict[str, Any]]) -> str:
+    def _combine_chunk_analyses(self, chunk_analyses: Dict[str, ChunkData], cross_references: List[Dict[str, Any]], color_coded: bool = False) -> str:
         """Combine individual chunk analyses into unified analysis"""
         all_findings = []
         total_confidence = 0.0
@@ -1433,7 +1441,59 @@ EXECUTIVE SUMMARY:
 {detailed_findings}
         """
         
+        # Clean the combined analysis to remove any remaining color-coded language (unless color coding is requested)
+        if not color_coded:
+            combined_analysis = self._remove_color_coded_language(combined_analysis)
+        
         return combined_analysis
+    
+    def _remove_color_coded_language(self, text: str) -> str:
+        """Remove color-coded language from the final analysis report"""
+        import re
+        
+        # Remove color-coded explanatory lines
+        patterns_to_remove = [
+            r'•\s*Green coded issues represent.*?\n',
+            r'•\s*Yellow coded issues represent.*?\n', 
+            r'•\s*Red coded issues represent.*?\n',
+            r'•\s*Green coded issues.*?\n',
+            r'•\s*Yellow coded issues.*?\n',
+            r'•\s*Red coded issues.*?\n',
+            # Remove any remaining color-coded references
+            r'.*?Green coded.*?\n',
+            r'.*?Yellow coded.*?\n',
+            r'.*?Red coded.*?\n',
+            r'.*?green coded.*?\n',
+            r'.*?yellow coded.*?\n',
+            r'.*?red coded.*?\n',
+        ]
+        
+        for pattern in patterns_to_remove:
+            text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Replace color-coded references in the executive summary
+        replacements = [
+            (r'Red coded \(high-risk\) findings:', 'High-risk findings:'),
+            (r'Yellow coded \(medium-risk\) findings:', 'Medium-risk findings:'),
+            (r'Green coded \(low-risk/favorable\) findings:', 'Low-risk/favorable findings:'),
+            (r'Red coded findings:', 'High-risk findings:'),
+            (r'Yellow coded findings:', 'Medium-risk findings:'), 
+            (r'Green coded findings:', 'Low-risk/favorable findings:'),
+            (r'red coded', 'high-risk'),
+            (r'yellow coded', 'medium-risk'),
+            (r'green coded', 'low-risk'),
+            (r'Red coded', 'High-risk'),
+            (r'Yellow coded', 'Medium-risk'),
+            (r'Green coded', 'Low-risk')
+        ]
+        
+        for pattern, replacement in replacements:
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        
+        # Remove empty lines that might have been left after removing color-coded text
+        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        
+        return text
     
     def _format_detailed_findings(self, high_risk: List, medium_risk: List, low_risk: List) -> str:
         """Format detailed issue-by-issue breakdown in professional legal report format"""
@@ -1785,7 +1845,7 @@ PROCESSING EFFICIENCY:
         
         return "\n".join(report_parts)
     
-    async def process_document(self, file_content: bytes, filename: str, prompt: str) -> str:
+    async def process_document(self, file_content: bytes, filename: str, prompt: str, color_coded: bool = False) -> str:
         """Execute the complete multi-agent workflow"""
         
         # Clear previous workflow history
@@ -1805,7 +1865,8 @@ PROCESSING EFFICIENCY:
             "current_step": "starting",
             "error": "",
             "processing_start_time": 0.0,
-            "total_chunks": 0
+            "total_chunks": 0,
+            "color_coded": color_coded
         }
         
         await agent_monitor.log_activity(

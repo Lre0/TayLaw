@@ -311,21 +311,14 @@ export default function MultiDocumentUpload() {
     try {
       const formData = new FormData()
       
-      // Use different endpoints based on number of documents
-      if (documents.length === 1) {
-        // Single document analysis
-        formData.append('file', documents[0].file)
-        formData.append('prompt', finalPrompt)
-      } else {
-        // Multiple document analysis
-        documents.forEach(doc => formData.append('files', doc.file))
-        formData.append('prompt', finalPrompt)
-      }
+      // Always use 'files' field name for consistency with backend
+      documents.forEach(doc => formData.append('files', doc.file))
+      formData.append('prompt', finalPrompt)
 
       // Update to analyzing status
       setDocuments(prev => prev.map(doc => ({ ...doc, status: 'analyzing' as const, progress: 30 })))
 
-      const endpoint = documents.length === 1 ? '/api/analyze' : '/api/analyze-multiple'
+      const endpoint = '/api/analyze'
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         body: formData,
